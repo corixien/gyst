@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GYST</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="card">
+      <header class="head">
+        <span class="mark">GYST</span>
+        <span class="tagline" data-i18n="tagline"></span>
+      </header>
+
+      <button id="toggle" class="big" type="button" aria-pressed="false"></button>
+
+      <section class="group">
+        <h2 data-i18n="sitesTitle"></h2>
+        <form id="siteForm" class="row-form">
+          <input id="siteInput" type="text" autocomplete="off" spellcheck="false" data-i18n-placeholder="siteInput" />
+          <button type="submit" class="btn" data-i18n="add"></button>
+          <button id="addCurrent" type="button" class="btn ghost" data-i18n="addCurrent"></button>
+        </form>
+        <p id="siteError" class="error" hidden data-i18n="invalidSite"></p>
+        <ul id="sites" class="sites"></ul>
+      </section>
+
+      <section class="group">
+        <h2 data-i18n="settingsTitle"></h2>
+        <label class="field">
+          <span data-i18n="popupMessageLabel"></span>
+          <input id="popupMessage" type="text" data-i18n-placeholder="defaultPopupMessage" />
+        </label>
+        <label class="field">
+          <span data-i18n="blockMessageLabel"></span>
+          <input id="blockMessage" type="text" data-i18n-placeholder="defaultBlockMessage" />
+        </label>
+        <label class="field">
+          <span data-i18n="language"></span>
+          <select id="language">
+            <option value="auto" data-i18n="languageAuto"></option>
+            <option value="de">Deutsch</option>
+            <option value="en">English</option>
+          </select>
+        </label>
+        <div class="row-form">
+          <button id="save" type="button" class="btn" data-i18n="save"></button>
+          <small id="saved" hidden data-i18n="saved"></small>
+        </div>
+      </section>
+
+      <footer class="foot" data-i18n="footer"></footer>
+    </main>
+
+    <dialog id="confirm">
+      <form method="dialog" class="card">
+        <h2 id="confirmTitle"></h2>
+        <p class="hint" data-i18n="confirmHint"></p>
+        <p id="confirmRequired" class="required"></p>
+        <input id="confirmInput" type="text" autocomplete="off" />
+        <p id="confirmMismatch" class="error" hidden data-i18n="mismatch"></p>
+        <p id="confirmWait" class="hint"></p>
+        <div class="row-form">
+          <button id="confirmCancel" type="button" class="btn ghost" data-i18n="cancel"></button>
+          <button id="confirmOk" type="button" class="btn danger" data-i18n="confirmDo"></button>
+        </div>
+      </form>
+    </dialog>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
