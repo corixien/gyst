@@ -23,7 +23,7 @@ npm run check         # typecheck, tests, both builds
 
 ### Firefox for Android
 
-Works in principle: every API GYST uses is supported on Firefox for Android (checked against MDN compat data). Not tested on a device yet. Install the add-on through the Firefox Android add-on menu once it is on AMO, or via a dev build with `about:debugging` on desktop and sync.
+Every API GYST uses is supported on Firefox for Android (checked against MDN compat data). Not tested on a device yet. Release Firefox for Android only installs signed add-ons, so it needs an AMO listing (or Firefox Nightly with signature checks disabled for testing).
 
 ## Install from source
 
