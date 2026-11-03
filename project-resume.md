@@ -28,5 +28,6 @@ WXT 0.21 + TypeScript + Vitest, MV3. Vanilla TS + CSS. `storage.local`, DNR dyna
 ## Decisions
 - 10 s confirm applies to turn-off and site removal only, not to enable or add.
 - Blocked page = extension page (`/blocked.html`), no original URL passed.
+- Unblock restores tabs to their original URL (`session:blockedTabs`). Verified in Chromium (popup flow) and Firefox (storage flow).
 - Blocking via webNavigation + tabs.update. DNR redirect to extension page broke in Firefox (NS_ERROR_DOM_BAD_URI).
 - Accent `#3b82f6`.

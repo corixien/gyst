@@ -6,6 +6,7 @@ Get Your Shit Together. A browser extension for Firefox and Chromium browsers th
 - **Blocked sites:** add a domain (or the current tab). It blocks the domain, its subdomains and all paths.
 - **Friction:** turning off or removing a site opens a popup. You type a sentence exactly and wait 10 seconds.
 - **Block page:** a blocked site shows your own message.
+- **Back where you were:** when a site is unblocked, its tab returns to the page you tried to open (for this session).
 - **Languages:** English and German, automatic from the browser or set manually.
 
 All data stays in the browser (`storage.local`). No network calls, no accounts.
