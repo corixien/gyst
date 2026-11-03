@@ -1,5 +1,5 @@
 import { browser, type Browser } from 'wxt/browser';
-import { buildBlockRules } from '../src/blocklist';
+import { buildBlockRules, isBlockedUrl } from '../src/blocklist';
 import { readSettings, settingsItem } from '../src/storage';
 
 const BLOCK_PAGE = '/blocked.html';
@@ -17,9 +17,22 @@ export default defineBackground(() => {
         removeRuleIds: existing.map((rule) => rule.id),
         addRules: buildBlockRules(domains, BLOCK_PAGE) as Browser.declarativeNetRequest.Rule[],
       });
+      // Redirect rules only apply to new navigations, so reload open tabs that are now blocked.
+      const previous = new Set(existing.map((rule) => rule.condition.urlFilter));
+      const added = domains.filter((domain) => !previous.has(`||${domain}^`));
+      if (added.length > 0) await reloadBlockedTabs(added);
     });
     queue = result.catch(() => undefined);
     return result;
+  };
+
+  const reloadBlockedTabs = async (domains: string[]) => {
+    const tabs = await browser.tabs.query({});
+    await Promise.all(
+      tabs
+        .filter((tab) => tab.id !== undefined && isBlockedUrl(tab.url ?? '', domains))
+        .map((tab) => browser.tabs.reload(tab.id!)),
+    );
   };
 
   browser.runtime.onInstalled.addListener(syncRules);

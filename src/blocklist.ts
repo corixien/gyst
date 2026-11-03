@@ -14,6 +14,16 @@ export function normalizeDomain(input: string): string | null {
   return value;
 }
 
+export function isBlockedUrl(url: string, domains: string[]): boolean {
+  let hostname: string;
+  try {
+    hostname = new URL(url).hostname;
+  } catch {
+    return false;
+  }
+  return domains.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`));
+}
+
 export interface BlockRule {
   id: number;
   priority: number;

@@ -1,5 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { buildBlockRules, normalizeDomain } from './blocklist';
+import { buildBlockRules, isBlockedUrl, normalizeDomain } from './blocklist';
+
+describe('isBlockedUrl', () => {
+  it('matches the domain, its subdomains and all paths', () => {
+    expect(isBlockedUrl('https://youtube.com/watch?v=1', ['youtube.com'])).toBe(true);
+    expect(isBlockedUrl('https://m.youtube.com/', ['youtube.com'])).toBe(true);
+    expect(isBlockedUrl('http://www.youtube.com/a/b', ['youtube.com'])).toBe(true);
+  });
+
+  it('does not match other domains or lookalikes', () => {
+    expect(isBlockedUrl('https://notyoutube.com/', ['youtube.com'])).toBe(false);
+    expect(isBlockedUrl('https://example.org/youtube.com', ['youtube.com'])).toBe(false);
+    expect(isBlockedUrl('chrome://extensions', ['youtube.com'])).toBe(false);
+  });
+});
 
 describe('normalizeDomain', () => {
   it('accepts plain domains and URLs', () => {
