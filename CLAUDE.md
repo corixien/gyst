@@ -8,14 +8,15 @@ Browser extension (WXT, TypeScript, MV3) for Firefox and Chromium. Blocks distra
 - `npm run dev` / `npm run dev:firefox`: dev builds.
 
 ## Layout
-- `entrypoints/background.ts`: single writer of DNR block rules. Syncs on install, startup, and settings change.
+- `entrypoints/background.ts`: `webNavigation` redirect to the block page (`tabs.update`). Reloads open tabs when a site becomes blocked.
 - `entrypoints/popup/`: toggle, site list, 10 s confirm dialog, settings.
 - `entrypoints/blocked/`: block page shown on redirect.
 - `src/`: pure logic (`blocklist`, `i18n`, `settings`) and storage item.
 
 ## Invariants
-- Only the background writes DNR rules. Popup writes `local:settings`, background reacts.
-- Master off = no rules. Sites in `sites` are matched as `||domain^` (subdomains and all paths).
+- Popup writes `local:settings`, background reacts. Master off = nothing blocked.
+- Sites in `sites` match the domain, its subdomains and all paths (`isBlockedUrl`).
+- Do not use DNR redirect to extension pages: Firefox fails with NS_ERROR_DOM_BAD_URI.
 - Turning off or removing a site always goes through the confirm dialog (typed sentence + 10 s).
 - No network calls, no analytics, no accounts.
 - Git: all work on `main`, push directly.

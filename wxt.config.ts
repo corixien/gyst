@@ -5,7 +5,7 @@ export default defineConfig({
   manifest: {
     name: 'GYST',
     description: 'Get Your Shit Together: block distracting sites until you really mean it.',
-    permissions: ['storage', 'declarativeNetRequest', 'tabs'],
+    permissions: ['storage', 'webNavigation', 'tabs'],
     host_permissions: ['<all_urls>'],
     browser_specific_settings: {
       gecko: {

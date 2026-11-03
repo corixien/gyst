@@ -43,7 +43,7 @@ npm run build:firefox
 ## Permissions
 
 - `storage`: save settings locally.
-- `declarativeNetRequest`: redirect blocked sites to the block page.
+- `webNavigation`: catch navigations to blocked sites and send them to the block page.
 - `tabs`: read the current tab's domain for the "Current tab" button.
 - `<all_urls>` host access: needed so blocking works for any domain you add.
 

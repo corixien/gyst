@@ -7,7 +7,7 @@ Firefox + Chromium extension "GYST" (Get Your Shit Together). Big master switch,
 WXT 0.21 + TypeScript + Vitest, MV3. Vanilla TS + CSS. `storage.local`, DNR dynamic rules. Same stack as `yt-hard-mode`.
 
 ## Layout
-- `entrypoints/background.ts`: syncs DNR redirect rules from settings.
+- `entrypoints/background.ts`: webNavigation redirect to block page; reloads open tabs on new blocks.
 - `entrypoints/popup/`: UI (toggle, sites, confirm dialog, settings).
 - `entrypoints/blocked/`: block page.
 - `src/blocklist.ts`, `src/i18n.ts`, `src/settings.ts`, `src/storage.ts`.
@@ -28,4 +28,5 @@ WXT 0.21 + TypeScript + Vitest, MV3. Vanilla TS + CSS. `storage.local`, DNR dyna
 ## Decisions
 - 10 s confirm applies to turn-off and site removal only, not to enable or add.
 - Blocked page = extension page (`/blocked.html`), no original URL passed.
+- Blocking via webNavigation + tabs.update. DNR redirect to extension page broke in Firefox (NS_ERROR_DOM_BAD_URI).
 - Accent `#3b82f6`.
