@@ -1,5 +1,6 @@
 import { browser } from 'wxt/browser';
 import { normalizeDomain } from '../../src/blocklist';
+import { matchesSentence, matchesSoFar } from '../../src/confirm';
 import { defaultPopupMessage, resolveLocale, t, type Locale, type MessageKey } from '../../src/i18n';
 import { normalizeSettings, type Settings } from '../../src/settings';
 import { readSettings, settingsItem } from '../../src/storage';
@@ -75,11 +76,11 @@ function askConfirm(title: string, required: string, onConfirm: () => Promise<un
   confirmInput.value = '';
 
   const updateState = () => {
-    const typed = confirmInput.value.trim() === required.trim();
-    const ready = remaining === 0 && typed;
-    confirmOk.disabled = !ready;
+    const value = confirmInput.value;
+    const complete = matchesSentence(value, required);
+    confirmOk.disabled = !(remaining === 0 && complete);
     confirmWait.textContent = remaining > 0 ? t('confirmWait', locale, { seconds: remaining }) : '';
-    confirmMismatch.hidden = remaining > 0 || typed || confirmInput.value === '';
+    confirmMismatch.hidden = value === '' || matchesSoFar(value, required);
   };
 
   const timer = setInterval(() => {

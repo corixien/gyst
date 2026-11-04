@@ -27,7 +27,7 @@ const de = {
   confirmWait: 'Warte noch {seconds} s',
   confirmDo: 'Bestätigen',
   cancel: 'Abbrechen',
-  mismatch: 'Der Text stimmt noch nicht.',
+  mismatch: 'Bisher falsch.',
   blockedTitle: 'Gesperrt',
   footer: 'Alle Daten bleiben lokal. Keine Accounts, keine Netzwerkaufrufe.',
 };
@@ -61,7 +61,7 @@ const en: Record<MessageKey, string> = {
   confirmWait: 'Wait {seconds} s',
   confirmDo: 'Confirm',
   cancel: 'Cancel',
-  mismatch: 'The text does not match yet.',
+  mismatch: 'Wrong so far.',
   blockedTitle: 'Blocked',
   footer: 'All data stays local. No accounts, no network calls.',
 };
