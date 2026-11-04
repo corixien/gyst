@@ -23,7 +23,7 @@ WXT 0.21 + TypeScript + Vitest, MV3. Vanilla TS + CSS. `storage.local`, DNR dyna
 ## Open
 - Manual test in Firefox and Chrome.
 - Store listings (AMO, Chrome Web Store): user creates accounts.
-- Icons: none yet.
+- Icons: `design/icon.svg` = blue glyph-only G, source of `public/icon/{16,32,48,96,128}.png` (render via Playwright, see scratchpad script). Toolbar size still to be checked by user.
 
 ## Decisions
 - 10 s confirm applies to turn-off and site removal only, not to enable or add.
