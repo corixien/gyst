@@ -12,18 +12,33 @@ describe('allowedTypos', () => {
 });
 
 describe('matchesSentence', () => {
-  it('accepts the exact sentence, ignoring case and outer spaces', () => {
-    expect(matchesSentence(`  ${SENTENCE.toUpperCase()} `, SENTENCE)).toBe(true);
+  it('accepts the exact sentence', () => {
+    expect(matchesSentence(SENTENCE, SENTENCE)).toBe(true);
   });
 
-  it('accepts typos within the allowance', () => {
-    expect(matchesSentence('Ich wil das wirklich, auch wenn es weh tut.', SENTENCE)).toBe(true);
-    expect(matchesSentence('Ich will das wirklich, auch wen es weh tut', SENTENCE)).toBe(true);
+  it('accepts typos within the allowance, same length', () => {
+    expect(matchesSentence('Ich wil das wirklich, auch wenn es weh tot.', SENTENCE)).toBe(true);
+  });
+
+  it('accepts a length off by one', () => {
+    expect(matchesSentence('Ich will das wirklich, auch wenn es weh tut', SENTENCE)).toBe(true);
+    expect(matchesSentence('Ich will das wirklich, auch wenn es weh tut..', SENTENCE)).toBe(true);
+  });
+
+  it('rejects a length off by more than one, even with correct characters', () => {
+    expect(matchesSentence('Ich will das wirklich, auch wenn es weh tu', SENTENCE)).toBe(false);
+    expect(matchesSentence('Ich will das wirklich, auch wenn es weh tut...', SENTENCE)).toBe(false);
+    expect(matchesSentence('Ichwill das wirklich, auch wenn es weh tut.', SENTENCE)).toBe(true);
+    expect(matchesSentence('Ichwilldaswirklich,auchwennesweh tut.', SENTENCE)).toBe(false);
+  });
+
+  it('counts case as a typo', () => {
+    expect(matchesSentence('ich will das wirklich, auch wenn es weh tut.', SENTENCE)).toBe(true);
+    expect(matchesSentence('ich WILL das Wirklich, auch wenn es weh tut.', SENTENCE)).toBe(false);
   });
 
   it('rejects more typos than allowed', () => {
     expect(matchesSentence('Ich wil das wirklch, auch wen es weh tt.', SENTENCE)).toBe(false);
-    expect(matchesSentence('Nope', SENTENCE)).toBe(false);
   });
 
   it('requires exact text for short sentences', () => {
@@ -39,8 +54,8 @@ describe('matchesSoFar', () => {
     expect(matchesSoFar('Ich will das wirklich, auch', SENTENCE)).toBe(true);
   });
 
-  it('turns false once the input is clearly off', () => {
+  it('turns false once the input is clearly off or too long', () => {
     expect(matchesSoFar('Qwertzuiop', SENTENCE)).toBe(false);
-    expect(matchesSoFar('Hallo Welt, das wird nichts', SENTENCE)).toBe(false);
+    expect(matchesSoFar(SENTENCE + '!!', SENTENCE)).toBe(false);
   });
 });

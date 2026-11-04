@@ -1,10 +1,11 @@
 // The typed sentence may contain typos: one per 12 characters of the required sentence.
+// Case counts as a typo, so "ich" for "Ich" is allowed but costs one of the typos.
 const CHARS_PER_TYPO = 12;
-
-const normalize = (text: string) => text.trim().toLowerCase();
+// Length must match the sentence exactly, plus or minus one character (spaces and punctuation included).
+const LENGTH_SLACK = 1;
 
 export function allowedTypos(required: string): number {
-  return Math.floor(normalize(required).length / CHARS_PER_TYPO);
+  return Math.floor(required.length / CHARS_PER_TYPO);
 }
 
 function editDistance(a: string, b: string): number {
@@ -21,12 +22,13 @@ function editDistance(a: string, b: string): number {
 }
 
 export function matchesSentence(typed: string, required: string): boolean {
-  return editDistance(normalize(typed), normalize(required)) <= allowedTypos(required);
+  if (Math.abs(typed.length - required.length) > LENGTH_SLACK) return false;
+  return editDistance(typed, required) <= allowedTypos(required);
 }
 
 // True while the input could still become the sentence; false once it is already too far off.
 export function matchesSoFar(typed: string, required: string): boolean {
-  const value = normalize(typed);
-  const prefix = normalize(required).slice(0, value.length);
-  return editDistance(value, prefix) <= allowedTypos(required);
+  if (typed.length > required.length + LENGTH_SLACK) return false;
+  const prefix = required.slice(0, typed.length);
+  return editDistance(typed, prefix) <= allowedTypos(required);
 }
