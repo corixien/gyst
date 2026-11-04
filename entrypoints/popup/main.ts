@@ -1,6 +1,6 @@
 import { browser } from 'wxt/browser';
 import { normalizeDomain } from '../../src/blocklist';
-import { matchesSentence, matchesSoFar } from '../../src/confirm';
+import { matchesSentence } from '../../src/confirm';
 import { defaultPopupMessage, resolveLocale, t, type Locale, type MessageKey } from '../../src/i18n';
 import { normalizeSettings, type Settings } from '../../src/settings';
 import { readSettings, settingsItem } from '../../src/storage';
@@ -24,7 +24,6 @@ const dialog = $<HTMLDialogElement>('confirm');
 const confirmInput = $<HTMLInputElement>('confirmInput');
 const confirmOk = $<HTMLButtonElement>('confirmOk');
 const confirmWait = $<HTMLParagraphElement>('confirmWait');
-const confirmMismatch = $<HTMLParagraphElement>('confirmMismatch');
 
 const save = (patch: Partial<Settings>) => settingsItem.setValue({ ...settings, ...patch });
 
@@ -76,11 +75,8 @@ function askConfirm(title: string, required: string, onConfirm: () => Promise<un
   confirmInput.value = '';
 
   const updateState = () => {
-    const value = confirmInput.value;
-    const complete = matchesSentence(value, required);
-    confirmOk.disabled = !(remaining === 0 && complete);
+    confirmOk.disabled = !(remaining === 0 && matchesSentence(confirmInput.value, required));
     confirmWait.textContent = remaining > 0 ? t('confirmWait', locale, { seconds: remaining }) : '';
-    confirmMismatch.hidden = value === '' || matchesSoFar(value, required);
   };
 
   const timer = setInterval(() => {
