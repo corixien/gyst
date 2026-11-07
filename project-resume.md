@@ -31,3 +31,5 @@ WXT 0.21 + TypeScript + Vitest, MV3. Vanilla TS + CSS. `storage.local`, DNR dyna
 - Unblock restores tabs to their original URL (`session:blockedTabs`). Verified in Chromium (popup flow) and Firefox (storage flow).
 - Blocking via webNavigation + tabs.update. DNR redirect to extension page broke in Firefox (NS_ERROR_DOM_BAD_URI).
 - Accent `#3b82f6`.
+- Bump `package.json` version (`npm version X --no-git-tag-version`) on every new zip build. Zip names follow the version.
+- AMO: ID `gyst@corixien.github.io` is a NEW add-on. Upload via "Submit a New Add-on", not as a new version of `yt-hard-mode`.
