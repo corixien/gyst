@@ -1,6 +1,6 @@
 {
   "name": "gyst",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "GYST (Get Your Shit Together): block distracting sites in Firefox and Chromium browsers",
   "type": "module",
