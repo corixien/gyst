@@ -1,6 +1,6 @@
 import unittest
 
-from gyst_companion import WINDOW_SECONDS, in_free_window, match_partner_code, partner_code
+from gyst_companion import WINDOW_SECONDS, in_free_window, match_partner_code, partner_code, valid_free_windows
 
 SECRET = '00' * 32
 
@@ -27,6 +27,18 @@ class PartnerCodeTest(unittest.TestCase):
         now = 1000 * WINDOW_SECONDS
         other = 'ff' * 32
         self.assertIsNone(match_partner_code([SECRET], partner_code(other, '1h', 1000), now))
+
+
+class ValidWindowsTest(unittest.TestCase):
+    def test_accepts_hhmm_windows(self):
+        self.assertTrue(valid_free_windows([{'from': '20:00', 'to': '22:30'}]))
+        self.assertTrue(valid_free_windows([]))
+
+    def test_rejects_bad_input(self):
+        self.assertFalse(valid_free_windows([{'from': '24:00', 'to': '22:00'}]))
+        self.assertFalse(valid_free_windows([{'from': '9:00', 'to': '22:00'}]))
+        self.assertFalse(valid_free_windows([{'from': '20:00', 'to': '20:00'}]))
+        self.assertFalse(valid_free_windows('20:00'))
 
 
 class FreeWindowTest(unittest.TestCase):

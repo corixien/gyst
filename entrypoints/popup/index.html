@@ -27,6 +27,25 @@
       </section>
 
       <section class="group">
+        <h2 data-i18n="freeTitle"></h2>
+        <p class="hint" data-i18n="freeHint"></p>
+        <form id="freeForm" class="row-form">
+          <label class="field">
+            <span data-i18n="freeFrom"></span>
+            <input id="freeFrom" type="time" required />
+          </label>
+          <label class="field">
+            <span data-i18n="freeTo"></span>
+            <input id="freeTo" type="time" required />
+          </label>
+          <button type="submit" class="btn" data-i18n="add"></button>
+        </form>
+        <p id="freeError" class="error" hidden data-i18n="freeInvalid"></p>
+        <p id="freeOffline" class="error" hidden data-i18n="companionOffline"></p>
+        <ul id="free" class="sites"></ul>
+      </section>
+
+      <section class="group">
         <h2 data-i18n="settingsTitle"></h2>
         <label class="field">
           <span data-i18n="popupMessageLabel"></span>
@@ -35,6 +54,13 @@
         <label class="field">
           <span data-i18n="blockMessageLabel"></span>
           <input id="blockMessage" type="text" data-i18n-placeholder="defaultBlockMessage" />
+        </label>
+        <label class="field">
+          <span data-i18n="unlockLabel"></span>
+          <select id="unlock">
+            <option value="text" data-i18n="unlockText"></option>
+            <option value="partner" data-i18n="unlockPartner"></option>
+          </select>
         </label>
         <label class="field">
           <span data-i18n="language"></span>
@@ -54,11 +80,12 @@
     </main>
 
     <dialog id="confirm">
-      <form method="dialog" class="card">
+      <form id="confirmForm" class="card">
         <h2 id="confirmTitle"></h2>
-        <p class="hint" data-i18n="confirmHint"></p>
+        <p id="confirmHint" class="hint" data-i18n="confirmHint"></p>
         <p id="confirmRequired" class="required"></p>
-        <input id="confirmInput" type="text" autocomplete="off" />
+        <input id="confirmInput" type="text" autocomplete="off" spellcheck="false" />
+        <p id="confirmError" class="error" hidden data-i18n="codeInvalid"></p>
         <p id="confirmWait" class="hint"></p>
         <div class="row-form">
           <button id="confirmCancel" type="button" class="btn ghost" data-i18n="cancel"></button>

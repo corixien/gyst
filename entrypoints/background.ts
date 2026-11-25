@@ -1,5 +1,6 @@
 import { browser } from 'wxt/browser';
 import { isBlockedUrl } from '../src/blocklist';
+import { askCompanion } from '../src/companion';
 import { DEFAULT_SETTINGS, type Settings } from '../src/settings';
 import { blockedTabsItem, readSettings, settingsItem } from '../src/storage';
 
@@ -7,13 +8,6 @@ const BLOCK_PAGE = '/blocked.html';
 
 const blockPageUrl = () => browser.runtime.getURL(BLOCK_PAGE);
 const blockedDomains = (settings: Settings) => (settings.enabled ? settings.sites : []);
-
-// Companion decides free windows and starts the lock. Without a companion nothing is free.
-const COMPANION = 'gyst_companion';
-const askCompanion = (type: 'check' | 'blocked', url: string): Promise<boolean> =>
-  browser.runtime
-    .sendNativeMessage(COMPANION, { type, host: new URL(url).hostname })
-    .then((reply) => Boolean(reply?.free), () => false);
 
 export default defineBackground(() => {
   // Serialize writes to the tab map and the tab updates that depend on it.
@@ -34,7 +28,9 @@ export default defineBackground(() => {
       const settings = await readSettings();
       if (!isBlockedUrl(details.url, blockedDomains(settings))) return;
       const quiet = quietTabs.delete(details.tabId);
-      if (await askCompanion(quiet ? 'check' : 'blocked', details.url)) return;
+      // The companion decides free windows and starts the lock. Without a companion nothing is free.
+      const reply = await askCompanion({ type: quiet ? 'check' : 'blocked', host: new URL(details.url).hostname });
+      if (reply?.free) return;
       await serial(async () => {
         const tabs = await blockedTabsItem.getValue();
         await blockedTabsItem.setValue({ ...tabs, [details.tabId]: details.url });

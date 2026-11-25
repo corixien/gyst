@@ -10,6 +10,7 @@ import json
 import math
 import os
 import queue
+import re
 import select
 import socket
 import struct
@@ -84,6 +85,19 @@ def match_partner_code(secrets, typed, now):
                 if hmac.compare_digest(partner_code(secret, tier, w), typed):
                     return tier, minutes, (w + 2) * WINDOW_SECONDS
     return None
+
+
+HHMM = re.compile(r'([01]\d|2[0-3]):[0-5]\d')
+
+
+def valid_free_windows(windows):
+    return isinstance(windows, list) and all(
+        isinstance(w, dict)
+        and isinstance(w.get('from'), str) and HHMM.fullmatch(w['from'])
+        and isinstance(w.get('to'), str) and HHMM.fullmatch(w['to'])
+        and w['from'] != w['to']
+        for w in windows
+    )
 
 
 def _minute_of_day(hhmm):
@@ -204,10 +218,7 @@ class Companion:
 
     def handle(self, req, reply):
         self.cfg = load_config()
-        free = self.free_now()
-        if req.get('type') == 'blocked' and not free and self.lock is None:
-            self.start_lock(str(req.get('host', '')))
-        reply.put({'free': free})
+        reply.put(self.dispatch(req))
 
     def start_lock(self, host):
         grab = InputGrab(self.keys.put)
@@ -261,20 +272,47 @@ class Companion:
                 lock.typed = ''
                 lock.status = 'Code ungültig'
 
-    def try_code(self, typed):
+    def consume_code(self, typed):
+        """Mark a valid, unused code as used. Returns (tier, minutes) or None."""
         now = time.time()
         used = {code: until for code, until in self.state.get('used', {}).items() if until > now}
-        if typed in used:
-            return False
-        match = match_partner_code(self.cfg['partner_secrets'], typed, now)
+        match = None if typed in used else match_partner_code(self.cfg['partner_secrets'], typed, now)
+        if match:
+            tier, minutes, expires = match
+            used[typed] = expires
+            self.state = {**self.state, 'used': used}
+            save_state(self.state)
+            return tier, minutes
+        return None
+
+    def try_code(self, typed):
+        match = self.consume_code(typed)
         if not match:
             return False
-        tier, minutes, expires = match
-        used[typed] = expires
-        self.state = {**self.state, 'used': used, 'grant_until': now + minutes * 60}
+        tier, minutes = match
+        self.state = {**self.state, 'grant_until': time.time() + minutes * 60}
         save_state(self.state)
         print(f'gyst: partner grant {tier}', file=sys.stderr)
         return True
+
+    def set_free_windows(self, windows):
+        if not valid_free_windows(windows):
+            return {'ok': False, 'error': 'invalid windows'}
+        CONFIG_PATH.write_text(json.dumps({**self.cfg, 'free_windows': windows}, indent=2) + '\n')
+        return {'ok': True}
+
+    def dispatch(self, req):
+        kind = req.get('type')
+        if kind == 'getConfig':
+            return {'config': {'free_windows': self.cfg['free_windows']}}
+        if kind == 'setFreeWindows':
+            return self.set_free_windows(req.get('windows'))
+        if kind == 'verifyCode':
+            return {'ok': self.consume_code(str(req.get('code', ''))) is not None}
+        free = self.free_now()
+        if kind == 'blocked' and not free and self.lock is None:
+            self.start_lock(str(req.get('host', '')))
+        return {'free': free}
 
     def end_lock(self):
         self.lock.grab.stop()
