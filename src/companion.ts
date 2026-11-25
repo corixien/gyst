@@ -4,6 +4,7 @@ import { browser } from 'wxt/browser';
 export const COMPANION = 'gyst_companion';
 
 export interface FreeWindow {
+  day: number; // 0 = Monday ... 6 = Sunday
   from: string; // "HH:MM" local time
   to: string; // "HH:MM" local time, may be earlier than from (wraps midnight)
 }

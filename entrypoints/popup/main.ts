@@ -30,6 +30,7 @@ const confirmOk = $<HTMLButtonElement>('confirmOk');
 const confirmWait = $<HTMLParagraphElement>('confirmWait');
 const confirmError = $<HTMLParagraphElement>('confirmError');
 const freeList = $<HTMLUListElement>('free');
+const freeDay = $<HTMLSelectElement>('freeDay');
 const freeFrom = $<HTMLInputElement>('freeFrom');
 const freeTo = $<HTMLInputElement>('freeTo');
 const freeError = $<HTMLParagraphElement>('freeError');
@@ -75,12 +76,19 @@ function render() {
   }
 }
 
+// Day 0 is Monday. 5 Jan 2026 was a Monday, so the names follow the UI language.
+const weekdayName = (day: number, style: 'long' | 'short' = 'long') =>
+  new Intl.DateTimeFormat(locale, { weekday: style }).format(new Date(2026, 0, 5 + day));
+
 function renderFree() {
+  const sorted = freeWindows
+    .map((window, index) => ({ window, index }))
+    .sort((a, b) => a.window.day - b.window.day || a.window.from.localeCompare(b.window.from));
   freeList.replaceChildren(
-    ...freeWindows.map((window, index) => {
+    ...sorted.map(({ window, index }) => {
       const item = document.createElement('li');
       const range = document.createElement('span');
-      range.textContent = `${window.from} – ${window.to}`;
+      range.textContent = `${weekdayName(window.day)} ${window.from} – ${window.to}`;
       const remove = document.createElement('button');
       remove.type = 'button';
       remove.className = 'btn ghost small';
@@ -202,13 +210,14 @@ $<HTMLButtonElement>('addCurrent').onclick = async () => {
 
 $<HTMLFormElement>('freeForm').onsubmit = (event) => {
   event.preventDefault();
+  const day = Number(freeDay.value);
   const from = freeFrom.value;
   const to = freeTo.value;
   const valid = from !== '' && to !== '' && from !== to;
   freeError.hidden = valid;
   if (!valid) return;
   askConfirm(t('confirmFreeTitle', locale), popupMessage(), async () => {
-    if (await saveFree([...freeWindows, { from, to }])) {
+    if (await saveFree([...freeWindows, { day, from, to }])) {
       freeFrom.value = '';
       freeTo.value = '';
     }
@@ -243,6 +252,9 @@ async function init() {
   unlockSelect.value = settings.unlock;
   applyLocale();
   render();
+  freeDay.replaceChildren(
+    ...[0, 1, 2, 3, 4, 5, 6].map((day) => new Option(weekdayName(day), String(day))),
+  );
   void loadFree();
 
   settingsItem.watch((value) => {

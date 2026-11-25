@@ -28,7 +28,7 @@ DEFAULT_CONFIG = {
     'lock_seconds': 10,
     'max_lock_seconds': 120,
     'message': 'Get your shit together. Diese Seite ist gesperrt.',
-    'free_windows': [],  # [{"from": "20:00", "to": "22:00"}], wraps midnight if from > to
+    'free_windows': [],  # [{"day": 0, "from": "20:00", "to": "22:00"}], day 0 = Monday
     'partner_secrets': [],  # hex strings, one per partner
 }
 
@@ -91,8 +91,10 @@ HHMM = re.compile(r'([01]\d|2[0-3]):[0-5]\d')
 
 
 def valid_free_windows(windows):
+    """Each window: {"day": 0-6 (0 = Monday), "from": "HH:MM", "to": "HH:MM"}. "to" may be earlier than "from" (wraps midnight)."""
     return isinstance(windows, list) and all(
         isinstance(w, dict)
+        and type(w.get('day')) is int and 0 <= w['day'] <= 6
         and isinstance(w.get('from'), str) and HHMM.fullmatch(w['from'])
         and isinstance(w.get('to'), str) and HHMM.fullmatch(w['to'])
         and w['from'] != w['to']
@@ -105,13 +107,18 @@ def _minute_of_day(hhmm):
     return int(hours) * 60 + int(minutes)
 
 
-def in_free_window(windows, minute):
+def in_free_window(windows, now):
+    """now: datetime. A window that wraps midnight also covers the early hours of the following weekday."""
+    minute = now.hour * 60 + now.minute
     for window in windows:
         start, end = _minute_of_day(window['from']), _minute_of_day(window['to'])
-        if start <= end and start <= minute < end:
+        if start < end and window['day'] == now.weekday() and start <= minute < end:
             return True
-        if start > end and (minute >= start or minute < end):
-            return True
+        if start > end:
+            if window['day'] == now.weekday() and minute >= start:
+                return True
+            if window['day'] == (now.weekday() - 1) % 7 and minute < end:
+                return True
     return False
 
 
@@ -213,12 +220,16 @@ class Companion:
     def free_now(self):
         if self.state.get('grant_until', 0) > time.time():
             return True
-        now = datetime.datetime.now()
-        return in_free_window(self.cfg['free_windows'], now.hour * 60 + now.minute)
+        return in_free_window(self.cfg['free_windows'], datetime.datetime.now())
 
     def handle(self, req, reply):
         self.cfg = load_config()
-        reply.put(self.dispatch(req))
+        try:
+            answer = self.dispatch(req)
+        except Exception as err:  # a bad config entry must not kill the tk loop
+            print(f'gyst: request failed: {err!r}', file=sys.stderr)
+            answer = {'free': False, 'error': 'request failed'}
+        reply.put(answer)
 
     def start_lock(self, host):
         grab = InputGrab(self.keys.put)
