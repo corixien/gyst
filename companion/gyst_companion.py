@@ -34,9 +34,8 @@ DEFAULT_CONFIG = {
 
 TIERS = {'30m': 30, '1h': 60, 'day': 24 * 60}  # tier -> minutes granted
 WINDOW_SECONDS = 300  # partner codes change every 5 min; previous window is still accepted
-TICK_MS = 100
-RING_SIZE = 220
-RING_WIDTH = 14
+TICK_MS = 16  # smooth disc animation; the loop only drains queues, so this is cheap
+DISC_RATIO = 0.6  # disc diameter as share of screen height
 
 EV_KEY = 0x01
 EVENT = struct.Struct('llHHi')  # struct input_event, 64-bit Linux
@@ -245,12 +244,12 @@ class Companion:
         window.attributes('-fullscreen', True)
         window.attributes('-topmost', True)
         window.protocol('WM_DELETE_WINDOW', lambda: None)
-        # Hourglass-style ring that empties over lock_seconds, message below it. Nothing else.
-        canvas = tk.Canvas(window, width=RING_SIZE, height=RING_SIZE, bg='#0b0d12', highlightthickness=0)
-        margin = RING_WIDTH
-        canvas.create_oval(margin, margin, RING_SIZE - margin, RING_SIZE - margin, outline='#262c3a', width=RING_WIDTH)
-        arc = canvas.create_arc(margin, margin, RING_SIZE - margin, RING_SIZE - margin, start=90, extent=359.9,
-                                outline='#3b82f6', width=RING_WIDTH, style='arc')
+        # Disc that empties clockwise over lock_seconds (white slice = time left), message below it. Nothing else.
+        size = int(self.root.winfo_screenheight() * DISC_RATIO)
+        canvas = tk.Canvas(window, width=size, height=size, bg='#0b0d12', highlightthickness=0)
+        canvas.create_oval(0, 0, size, size, fill='#1a1f2b', outline='')
+        arc = canvas.create_arc(0, 0, size, size, start=90, extent=359.9, fill='#ffffff', outline='',
+                                style='pieslice')
         message = tk.Label(window, text=self.cfg['message'], fg='#f2f4f8', bg='#0b0d12',
                            font=('Sans', 34, 'bold'), wraplength=1200)
         # Shown only while digits are typed, so a partner code can be checked.
