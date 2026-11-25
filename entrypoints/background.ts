@@ -8,6 +8,13 @@ const BLOCK_PAGE = '/blocked.html';
 const blockPageUrl = () => browser.runtime.getURL(BLOCK_PAGE);
 const blockedDomains = (settings: Settings) => (settings.enabled ? settings.sites : []);
 
+// Companion decides free windows and starts the lock. Without a companion nothing is free.
+const COMPANION = 'gyst_companion';
+const askCompanion = (type: 'check' | 'blocked', url: string): Promise<boolean> =>
+  browser.runtime
+    .sendNativeMessage(COMPANION, { type, host: new URL(url).hostname })
+    .then((reply) => Boolean(reply?.free), () => false);
+
 export default defineBackground(() => {
   // Serialize writes to the tab map and the tab updates that depend on it.
   let queue: Promise<unknown> = Promise.resolve();
@@ -17,12 +24,17 @@ export default defineBackground(() => {
     return result;
   };
 
+  // Tabs reloaded by reloadTabs must not start a lock, only a free-window check.
+  const quietTabs = new Set<number>();
+
   // Redirect before the page loads. Firefox refuses DNR redirects to extension pages, so tabs.update is used.
   browser.webNavigation.onBeforeNavigate.addListener(
     async (details) => {
       if (details.frameId !== 0) return;
       const settings = await readSettings();
       if (!isBlockedUrl(details.url, blockedDomains(settings))) return;
+      const quiet = quietTabs.delete(details.tabId);
+      if (await askCompanion(quiet ? 'check' : 'blocked', details.url)) return;
       await serial(async () => {
         const tabs = await blockedTabsItem.getValue();
         await blockedTabsItem.setValue({ ...tabs, [details.tabId]: details.url });
@@ -64,7 +76,11 @@ export default defineBackground(() => {
     await Promise.all(
       tabs
         .filter((tab) => tab.id !== undefined && isBlockedUrl(tab.url ?? '', domains))
-        .map((tab) => browser.tabs.reload(tab.id!)),
+        .map((tab) => {
+          quietTabs.add(tab.id!);
+          setTimeout(() => quietTabs.delete(tab.id!), 5000);
+          return browser.tabs.reload(tab.id!);
+        }),
     );
   };
 

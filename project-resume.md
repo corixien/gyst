@@ -20,6 +20,13 @@ WXT 0.21 + TypeScript + Vitest, MV3. Vanilla TS + CSS. `storage.local`, DNR dyna
 - NOT verified in a real browser yet: DNR redirect behavior, popup flow.
 - Repo `corixien/gyst` (public, MIT), first commit pushed to `main`.
 
+## Companion (Linux, `companion/`)
+- `gyst_companion.py`: systemd user daemon. Unix socket in `$XDG_RUNTIME_DIR`. On `blocked`: full-screen tk lock + evdev grab (`EVIOCGRAB`, user in group `input`, no sudo). On `check`/`blocked`: replies `free` (daily windows or partner grant).
+- `gyst_native_host.py`: native messaging bridge (Firefox, `gyst_companion` host name). Addon calls it in `background.ts`; without companion nothing is free.
+- `partner/index.html`: offline code generator (HMAC, 30m/1h/day). Known limitation: key readable by user in config. Planned: asymmetric key.
+- Not built yet: settings UI for partners, Chrome native host (needs extension ID), Android.
+- Lock not tested on real hardware. Test with `lock_seconds` 3, `max_lock_seconds` 15.
+
 ## Open
 - Manual test in Firefox and Chrome.
 - Store listings (AMO, Chrome Web Store): user creates accounts.

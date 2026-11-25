@@ -1,0 +1,7 @@
+{
+  "name": "gyst_companion",
+  "description": "GYST companion bridge",
+  "path": "__HOST__",
+  "type": "stdio",
+  "allowed_extensions": ["gyst@corixien.github.io"]
+}

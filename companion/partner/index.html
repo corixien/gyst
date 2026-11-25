@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GYST Partner</title>
+    <style>
+      :root { color-scheme: dark; font: 16px/1.4 system-ui, sans-serif; background: #0b0d12; color: #f2f4f8; }
+      body { margin: 0; padding: 20px; }
+      main { max-width: 420px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+      h1 { margin: 0; font-size: 22px; color: #3b82f6; }
+      label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #8b93a7; }
+      input { font: inherit; color: inherit; background: #141821; border: 1px solid #262c3a; border-radius: 8px; padding: 10px; }
+      button { font: inherit; font-weight: 600; color: #fff; background: #3b82f6; border: 0; border-radius: 10px; padding: 14px; }
+      button.ghost { background: #262c3a; }
+      #code { font: 700 44px/1 ui-monospace, monospace; letter-spacing: 0.08em; text-align: center; }
+      #info { color: #8b93a7; text-align: center; margin: 0; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>GYST Partner</h1>
+      <label>
+        Geheimer Schlüssel (einmal eintragen, bleibt auf diesem Gerät)
+        <input id="secret" type="password" autocomplete="off" spellcheck="false" />
+      </label>
+      <button data-tier="30m">30 Minuten freigeben</button>
+      <button data-tier="1h">1 Stunde freigeben</button>
+      <button data-tier="day">Ganzer Tag freigeben</button>
+      <div id="code">--------</div>
+      <p id="info">Wähle eine Freigabe. Der Code gilt 5 Minuten.</p>
+      <button class="ghost" id="forget">Schlüssel vergessen</button>
+    </main>
+    <script>
+      const WINDOW = 300;
+      const secretInput = document.getElementById('secret');
+      const codeEl = document.getElementById('code');
+      const infoEl = document.getElementById('info');
+      const enc = new TextEncoder();
+      const hexToBytes = (hex) => Uint8Array.from(hex.match(/../g).map((b) => parseInt(b, 16)));
+      const isSecret = (hex) => /^[0-9a-f]{32,}$/i.test(hex);
+
+      secretInput.value = localStorage.getItem('gyst-secret') ?? '';
+
+      async function partnerCode(secretHex, tier, window) {
+        const key = await crypto.subtle.importKey('raw', hexToBytes(secretHex), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+        const mac = new Uint8Array(await crypto.subtle.sign('HMAC', key, enc.encode(`${tier}:${window}`)));
+        const n = ((mac[0] << 24) | (mac[1] << 16) | (mac[2] << 8) | mac[3]) >>> 0;
+        return String(n % 1e8).padStart(8, '0');
+      }
+
+      async function grant(tier) {
+        const secret = secretInput.value.trim();
+        if (!isSecret(secret)) {
+          infoEl.textContent = 'Schlüssel fehlt oder ist ungültig.';
+          return;
+        }
+        localStorage.setItem('gyst-secret', secret);
+        const win = Math.floor(Date.now() / 1000 / WINDOW);
+        codeEl.textContent = await partnerCode(secret, tier, win);
+        const tick = () => {
+          const left = WINDOW - (Math.floor(Date.now() / 1000) % WINDOW);
+          infoEl.textContent = `Code gültig noch ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+        };
+        tick();
+        clearInterval(grant.timer);
+        grant.timer = setInterval(tick, 1000);
+      }
+
+      document.querySelectorAll('button[data-tier]').forEach((btn) =>
+        btn.addEventListener('click', () => grant(btn.dataset.tier)),
+      );
+      document.getElementById('forget').addEventListener('click', () => {
+        localStorage.removeItem('gyst-secret');
+        secretInput.value = '';
+        codeEl.textContent = '--------';
+        infoEl.textContent = 'Schlüssel gelöscht.';
+      });
+    </script>
+  </body>
+</html>
