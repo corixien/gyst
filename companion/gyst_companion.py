@@ -35,6 +35,8 @@ DEFAULT_CONFIG = {
 TIERS = {'30m': 30, '1h': 60, 'day': 24 * 60}  # tier -> minutes granted
 WINDOW_SECONDS = 300  # partner codes change every 5 min; previous window is still accepted
 TICK_MS = 100
+RING_SIZE = 220
+RING_WIDTH = 14
 
 EV_KEY = 0x01
 EVENT = struct.Struct('llHHi')  # struct input_event, 64-bit Linux
@@ -243,27 +245,32 @@ class Companion:
         window.attributes('-fullscreen', True)
         window.attributes('-topmost', True)
         window.protocol('WM_DELETE_WINDOW', lambda: None)
-        labels = {
-            'title': tk.Label(window, text='GYST', fg='#3b82f6', bg='#0b0d12', font=('Sans', 28, 'bold')),
-            'host': tk.Label(window, text=host, fg='#8b93a7', bg='#0b0d12', font=('Sans', 18)),
-            'message': tk.Label(window, text=self.cfg['message'], fg='#f2f4f8', bg='#0b0d12',
-                                font=('Sans', 34, 'bold'), wraplength=1200),
-            'countdown': tk.Label(window, text='', fg='#ff4d6d', bg='#0b0d12', font=('Sans', 24)),
-            'code': tk.Label(window, text='', fg='#f2f4f8', bg='#0b0d12', font=('Monospace', 22)),
-        }
-        for label in labels.values():
-            label.pack(pady=18)
+        # Hourglass-style ring that empties over lock_seconds, message below it. Nothing else.
+        canvas = tk.Canvas(window, width=RING_SIZE, height=RING_SIZE, bg='#0b0d12', highlightthickness=0)
+        margin = RING_WIDTH
+        canvas.create_oval(margin, margin, RING_SIZE - margin, RING_SIZE - margin, outline='#262c3a', width=RING_WIDTH)
+        arc = canvas.create_arc(margin, margin, RING_SIZE - margin, RING_SIZE - margin, start=90, extent=359.9,
+                                outline='#3b82f6', width=RING_WIDTH, style='arc')
+        message = tk.Label(window, text=self.cfg['message'], fg='#f2f4f8', bg='#0b0d12',
+                           font=('Sans', 34, 'bold'), wraplength=1200)
+        # Shown only while digits are typed, so a partner code can be checked.
+        code = tk.Label(window, text='', fg='#8b93a7', bg='#0b0d12', font=('Monospace', 22))
+        canvas.pack(pady=(0, 40))
+        message.pack()
+        code.pack(pady=24)
+        labels = {'arc': canvas, 'arc_id': arc, 'message': message, 'code': code}
         self.lock = Lock(host, self.cfg, grab, window, labels)
 
     def update_lock(self):
         lock = self.lock
         elapsed = time.monotonic() - lock.started
-        left = max(0, math.ceil(lock.lock_seconds - elapsed))
+        left = max(0.0, lock.lock_seconds - elapsed)
         if elapsed >= lock.max_seconds or (left == 0 and not lock.typed):
             self.end_lock()
             return
-        lock.labels['countdown'].config(text=f'Warte noch {left} s' if left else '')
-        lock.labels['code'].config(text=f'Partner-Code: {lock.typed or "_"}  {lock.status}')
+        lock.labels['arc'].itemconfigure(lock.labels['arc_id'], extent=max(0.1, 359.9 * left / lock.lock_seconds))
+        code_text = f'{lock.typed}  {lock.status}' if lock.typed or lock.status else ''
+        lock.labels['code'].config(text=code_text)
 
     def drain_keys(self):
         lock = self.lock
