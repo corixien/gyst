@@ -25,7 +25,7 @@ STATE_PATH = Path.home() / '.local/state/gyst-companion/state.json'
 SOCKET_PATH = Path(os.environ.get('XDG_RUNTIME_DIR', f'/run/user/{os.getuid()}')) / 'gyst-companion.sock'
 
 DEFAULT_CONFIG = {
-    'server': '',  # e.g. https://gyst-sync.onrender.com; empty = no sync, nothing is free
+    'server': 'https://gyst-sync-y5x4.onrender.com',  # empty = no sync, nothing is free
     'token': '',  # account token, from the add-on popup (Konto erstellen)
     'lock_seconds': 10,
     'max_lock_seconds': 120,

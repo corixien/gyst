@@ -21,7 +21,7 @@ WXT 0.21 + TypeScript + Vitest, MV3. Vanilla TS + CSS. `storage.local`, DNR dyna
 ## Commands
 `npm run check`, `npm test`, `npm run dev:firefox`.
 
-## Current state (0.2.1)
+## Current state (0.2.0, version kept until the Freigabe feature is done; zips are overwritten)
 - Known limit: the account token on the device can create invites, so the owner can register a partner key of their own. Only a third party identity (e.g. email confirmation to an address the owner does not control) closes this. Not built, decision pending.
 - Server v1: 15 API tests against local Postgres (podman container, port 55432, test only). Partner page served at `/partner`.
 - Add-on: account, invite, sync, gated changes, blocking, block-page release. Verified in headless Chrome (popup, partner grant, gated removal refused, block and release).
@@ -31,7 +31,7 @@ WXT 0.21 + TypeScript + Vitest, MV3. Vanilla TS + CSS. `storage.local`, DNR dyna
 ## Companion (Linux, `companion/`)
 - `gyst_companion.py`: systemd user daemon. Polls the server every 10 s (`config.json`: `server`, `token`). Free = grant running or in a free window. Lock screen (tk ring + GYST wordmark, evdev grab, no sudo) on `blocked` from Firefox.
 - `gyst_native_host.py`: native messaging bridge for Firefox (`gyst_companion`).
-- Fail closed: no server config or no state = nothing free.
+- Fail closed: no server config or no state = nothing free. Default server: `https://gyst-sync-y5x4.onrender.com` (add-on `src/api.ts` DEFAULT_SERVER, companion DEFAULT_CONFIG). Existing `config.json` on disk keeps its own `server` value.
 
 ## Open
 - Manual test in Firefox and Chrome.

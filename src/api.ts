@@ -19,7 +19,7 @@ export interface RemoteState {
   now: number;
 }
 
-export const DEFAULT_SERVER = 'https://gyst-sync.onrender.com'; // change in the popup if your service has another URL
+export const DEFAULT_SERVER = 'https://gyst-sync-y5x4.onrender.com'; // change in the popup if your service has another URL
 
 export async function apiCall<T>(server: string, path: string, init: { method?: string; body?: unknown; token?: string } = {}): Promise<T> {
   const response = await fetch(`${server.replace(/\/$/, '')}${path}`, {
