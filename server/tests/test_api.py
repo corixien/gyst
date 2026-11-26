@@ -13,7 +13,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey 
 from fastapi.testclient import TestClient  # noqa: E402
 
 import app as server  # noqa: E402
-from gating import grant_message, leave_message  # noqa: E402
+from gating import DEVICE_DOMAIN, INVITE_DOMAIN, LEAVE_DOMAIN, account_message, grant_message, setup_message  # noqa: E402
 
 BASE_SETTINGS = {
     'enabled': True, 'sites': ['youtube.com'], 'popupMessage': '', 'blockMessage': '',
@@ -24,30 +24,93 @@ BASE_SETTINGS = {
 def reset_db():
     server.init_schema()
     with server.connect() as conn:
-        conn.execute('TRUNCATE grant_log, partners, invites, account_state, accounts CASCADE')
+        conn.execute('TRUNCATE device_codes, devices, grant_log, partners, invites, account_state, accounts CASCADE')
+
+
+def pub_hex(key):
+    return key.public_key().public_bytes_raw().hex()
+
+
+def sig_b64(key, message):
+    return base64.b64encode(key.sign(message)).decode()
 
 
 class ApiTest(unittest.TestCase):
+    """Every account starts with the partner that set it up. Owners only hold device tokens."""
+
     def setUp(self):
         reset_db()
         self.client = TestClient(server.app)
-        self.account = self.client.post('/api/accounts').json()
-        self.auth = {'Authorization': f"Bearer {self.account['token']}"}
+        self.key = Ed25519PrivateKey.generate()
+        self.t = int(time.time())
+        stamp = self.tick()
+        r = self.client.post('/api/partner-setup', json={
+            'pubkey': pub_hex(self.key), 'name': 'p0', 'stamp': stamp,
+            'signature': sig_b64(self.key, setup_message(pub_hex(self.key), stamp))})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.account_id = r.json()['account_id']
+        self.token = self.claim(self.device_code(self.key, self.account_id))
+        self.auth = {'Authorization': f'Bearer {self.token}'}
         self.client.put('/api/settings', json=BASE_SETTINGS, headers=self.auth)  # first save: setup, no grant
+
+    def tick(self):
+        self.t = max(int(time.time()), self.t + 1)  # every partner-signed request needs a newer stamp
+        return self.t
+
+    def device_code(self, key, account_id, stamp=None):
+        stamp = stamp or self.tick()
+        body = self.signed_action(key, account_id, DEVICE_DOMAIN, stamp)
+        r = self.client.post('/api/partner/device-codes', json=body)
+        self.assertEqual(r.status_code, 200, r.text)
+        return r.json()['code']
+
+    def claim(self, code):
+        r = self.client.post('/api/devices/claim', json={'code': code})
+        self.assertEqual(r.status_code, 200, r.text)
+        return r.json()['token']
+
+    def signed_action(self, key, account_id, domain, stamp):
+        return {'account_id': account_id, 'pubkey': pub_hex(key), 'stamp': stamp,
+                'signature': sig_b64(key, account_message(domain, account_id, stamp))}
 
     def partner(self, name='p'):
         key = Ed25519PrivateKey.generate()
-        pub = key.public_key().public_bytes_raw().hex()
-        invite = self.client.post('/api/invites', headers=self.auth).json()['code']
-        r = self.client.post('/api/partners/register', json={'invite': invite, 'pubkey': pub, 'name': name})
+        stamp = self.tick()
+        invite = self.client.post('/api/partner/invites', json=self.signed_action(self.key, self.account_id, INVITE_DOMAIN, stamp))
+        self.assertEqual(invite.status_code, 200, invite.text)
+        r = self.client.post('/api/partners/register', json={'invite': invite.json()['code'], 'pubkey': pub_hex(key), 'name': name})
         self.assertEqual(r.status_code, 200, r.text)
-        return key, pub
+        return key, pub_hex(key)
+
+    def new_account(self):
+        key = Ed25519PrivateKey.generate()
+        stamp = self.tick()
+        r = self.client.post('/api/partner-setup', json={
+            'pubkey': pub_hex(key), 'name': 'other', 'stamp': stamp,
+            'signature': sig_b64(key, setup_message(pub_hex(key), stamp))})
+        self.assertEqual(r.status_code, 200, r.text)
+        return r.json()['account_id'], key
+
+    def invite_code(self):
+        r = self.client.post('/api/partner/invites', json=self.signed_action(self.key, self.account_id, INVITE_DOMAIN, self.tick()))
+        self.assertEqual(r.status_code, 200, r.text)
+        return r.json()['code']
+
+    def no_partner(self):
+        r = self.client.post('/api/partners/leave', json=self.leave_body(self.key))
+        self.assertEqual(r.status_code, 200, r.text)
+
+    def leave_body(self, key, stamp=None, account_id=None):
+        stamp = stamp or self.tick()
+        account_id = account_id or self.account_id
+        return self.signed_action(key, account_id, LEAVE_DOMAIN, stamp)
 
     def sign(self, key, tier, stamp=None, account_id=None):
-        stamp = stamp or int(time.time())
-        msg = grant_message(account_id or self.account['account_id'], tier, stamp)
-        return {'account_id': account_id or self.account['account_id'], 'tier': tier, 'stamp': stamp,
-                'signature': base64.b64encode(key.sign(msg)).decode(), 'pubkey': key.public_key().public_bytes_raw().hex()}
+        stamp = stamp or self.tick()
+        account_id = account_id or self.account_id
+        msg = grant_message(account_id, tier, stamp)
+        return {'account_id': account_id, 'tier': tier, 'stamp': stamp,
+                'signature': sig_b64(key, msg), 'pubkey': pub_hex(key)}
 
     def grant(self, key, tier, **kw):
         body = self.sign(key, tier, **kw)
@@ -61,7 +124,43 @@ class ApiTest(unittest.TestCase):
     def test_unknown_token_rejected(self):
         self.assertEqual(self.client.get('/api/state', headers={'Authorization': 'Bearer nope'}).status_code, 401)
 
+    def test_no_public_account_or_invite_creation(self):
+        self.assertIn(self.client.post('/api/accounts').status_code, (404, 405))
+        self.assertIn(self.client.post('/api/invites', headers=self.auth).status_code, (404, 405))
+
+    def test_owner_device_cannot_invite_or_setup(self):
+        # Only a partner signature can create invites; a device token has no way to sign one.
+        self.assertEqual(self.client.post('/api/partner/invites', json=self.signed_action(
+            Ed25519PrivateKey.generate(), self.account_id, INVITE_DOMAIN, self.tick())).status_code, 403)
+
+    def test_device_code_single_use_and_wrong_code(self):
+        code = self.device_code(self.key, self.account_id)
+        self.assertEqual(self.client.post('/api/devices/claim', json={'code': code.lower()}).status_code, 200)
+        self.assertEqual(self.client.post('/api/devices/claim', json={'code': code}).status_code, 400)
+        self.assertEqual(self.client.post('/api/devices/claim', json={'code': 'ZZZZ-ZZZZ'}).status_code, 400)
+
+    def test_setup_needs_valid_signature(self):
+        key = Ed25519PrivateKey.generate()
+        stamp = self.tick()
+        r = self.client.post('/api/partner-setup', json={
+            'pubkey': pub_hex(key), 'name': 'x', 'stamp': stamp,
+            'signature': sig_b64(self.key, setup_message(pub_hex(key), stamp))})
+        self.assertEqual(r.status_code, 403)
+
+    def test_device_code_needs_partner_and_fresh_stamp(self):
+        other = Ed25519PrivateKey.generate()
+        stamp = self.tick()
+        self.assertEqual(self.client.post('/api/partner/device-codes',
+                                          json=self.signed_action(other, self.account_id, DEVICE_DOMAIN, stamp)).status_code, 403)
+        self.assertEqual(self.client.post('/api/partner/device-codes',
+                                          json=self.signed_action(self.key, self.account_id, DEVICE_DOMAIN, stamp - 1000)).status_code, 403)
+        self.assertEqual(self.client.post('/api/partner/device-codes',
+                                          json=self.signed_action(self.key, self.account_id, DEVICE_DOMAIN, stamp)).status_code, 200)
+        self.assertEqual(self.client.post('/api/partner/device-codes',
+                                          json=self.signed_action(self.key, self.account_id, DEVICE_DOMAIN, stamp)).status_code, 409)
+
     def test_without_partner_save_and_disable_are_free(self):
+        self.no_partner()
         self.assertEqual(self.client.put('/api/settings', headers=self.auth, json={**BASE_SETTINGS, 'enabled': False}).status_code, 200)
 
     def test_save_needs_grant_when_partner_exists(self):
@@ -84,7 +183,7 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(self.client.post('/api/enabled', headers=self.auth, json={'enabled': False}).status_code, 403)
         self.assertEqual(self.grant(key, 3).status_code, 200)  # settings grant is not enough to switch off
         self.assertEqual(self.client.post('/api/enabled', headers=self.auth, json={'enabled': False}).status_code, 403)
-        self.assertEqual(self.grant(key, 0, stamp=int(time.time()) + 1).status_code, 200)
+        self.assertEqual(self.grant(key, 0, stamp=self.tick()).status_code, 200)
         self.assertEqual(self.client.post('/api/enabled', headers=self.auth, json={'enabled': False}).status_code, 200)
         self.assertEqual(self.client.post('/api/enabled', headers=self.auth, json={'enabled': True}).status_code, 200)
 
@@ -104,8 +203,8 @@ class ApiTest(unittest.TestCase):
     def test_end_grant_stops_time_and_settings(self):
         key, _ = self.partner()
         self.assertEqual(self.grant(key, 1).status_code, 200)
-        self.assertEqual(self.grant(key, 3, stamp=int(time.time()) + 1).status_code, 200)
-        r = self.grant(key, 4, stamp=int(time.time()) + 2)
+        self.assertEqual(self.grant(key, 3, stamp=self.tick()).status_code, 200)
+        r = self.grant(key, 4, stamp=self.tick())
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json()['grant_until'], 0)
         self.assertEqual(r.json()['settings_until'], 0)
@@ -117,7 +216,7 @@ class ApiTest(unittest.TestCase):
 
     def test_replayed_stamp_rejected(self):
         key, _ = self.partner()
-        stamp = int(time.time())
+        stamp = self.tick()
         self.assertEqual(self.grant(key, 0, stamp=stamp).status_code, 200)
         self.assertEqual(self.grant(key, 0, stamp=stamp).status_code, 409)
 
@@ -130,9 +229,8 @@ class ApiTest(unittest.TestCase):
 
     def test_signature_bound_to_account(self):
         key, _ = self.partner()
-        other_account = self.client.post('/api/accounts').json()
         body = self.sign(key, 0)
-        body['account_id'] = other_account['account_id']
+        body['account_id'] = self.new_account()[0]
         self.assertEqual(self.client.post('/api/grant', json=body).status_code, 403)
 
     def test_old_stamp_rejected(self):
@@ -140,8 +238,9 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(self.grant(key, 0, stamp=int(time.time()) - 3600).status_code, 403)
 
     def test_invite_single_use_and_returns_owner_name(self):
+        self.assertEqual(self.grant(self.key, 1).status_code, 200)
         self.client.put('/api/settings', headers=self.auth, json={**BASE_SETTINGS, 'displayName': 'Mateo'})
-        invite = self.client.post('/api/invites', headers=self.auth).json()['code']
+        invite = self.invite_code()
         pub = Ed25519PrivateKey.generate().public_key().public_bytes_raw().hex()
         r = self.client.post('/api/partners/register', json={'invite': invite, 'pubkey': pub, 'name': 'Anna'})
         self.assertEqual(r.status_code, 200)
@@ -151,27 +250,21 @@ class ApiTest(unittest.TestCase):
     def test_partner_list_shows_names(self):
         self.partner('Anna')
         names = self.client.get('/api/partners', headers=self.auth).json()['partners']
-        self.assertEqual([p['name'] for p in names], ['Anna'])
+        self.assertEqual([p['name'] for p in names], ['p0', 'Anna'])
 
     def test_multiple_partners_per_account(self):
         a, _ = self.partner('a')
         b, _ = self.partner('b')
-        stamp = int(time.time())
+        stamp = self.tick()
         self.assertEqual(self.grant(a, 0, stamp=stamp).status_code, 200)
         self.assertEqual(self.grant(b, 1, stamp=stamp + 1).status_code, 200)
 
     def test_accounts_are_isolated(self):
-        other = self.client.post('/api/accounts').json()
-        self.client.put('/api/settings', headers={'Authorization': f"Bearer {other['token']}"},
-                        json={**BASE_SETTINGS, 'sites': ['other.com']})
+        other_id, other_key = self.new_account()
+        other_auth = {'Authorization': f'Bearer {self.claim(self.device_code(other_key, other_id))}'}
+        self.client.put('/api/settings', headers=other_auth, json={**BASE_SETTINGS, 'sites': ['other.com']})
         state = self.client.get('/api/state', headers=self.auth).json()
         self.assertEqual(state['settings']['sites'], ['youtube.com'])
-
-    def leave_body(self, key, stamp=None, account_id=None):
-        stamp = stamp or int(time.time())
-        account_id = account_id or self.account['account_id']
-        sig = base64.b64encode(key.sign(leave_message(account_id, stamp))).decode()
-        return {'account_id': account_id, 'pubkey': key.public_key().public_bytes_raw().hex(), 'stamp': stamp, 'signature': sig}
 
     def test_enable_ends_running_grant(self):
         key, _ = self.partner()
@@ -188,11 +281,11 @@ class ApiTest(unittest.TestCase):
 
     def test_owner_remove_partner_needs_grant(self):
         key, _ = self.partner('Anna')
-        partner_id = self.client.get('/api/partners', headers=self.auth).json()['partners'][0]['id']
+        partner_id = [p for p in self.client.get('/api/partners', headers=self.auth).json()['partners'] if p['name'] == 'Anna'][0]['id']
         self.assertEqual(self.client.post('/api/partners/remove', headers=self.auth, json={'partner_id': partner_id}).status_code, 403)
         self.assertEqual(self.grant(key, 1).status_code, 200)
         self.assertEqual(self.client.post('/api/partners/remove', headers=self.auth, json={'partner_id': partner_id}).status_code, 200)
-        self.assertEqual(self.client.get('/api/state', headers=self.auth).json()['partners'], 0)
+        self.assertEqual(self.client.get('/api/state', headers=self.auth).json()['partners'], 1)  # p0 stays
 
     def test_owner_remove_rejects_bad_or_unknown_id(self):
         key, _ = self.partner()
@@ -205,7 +298,7 @@ class ApiTest(unittest.TestCase):
         key, _ = self.partner()
         r = self.client.post('/api/partners/leave', json=self.leave_body(key))
         self.assertEqual(r.status_code, 200, r.text)
-        self.assertEqual(self.client.get('/api/state', headers=self.auth).json()['partners'], 0)
+        self.assertEqual(self.client.get('/api/state', headers=self.auth).json()['partners'], 1)
         self.assertIn(self.client.post('/api/partners/leave', json=self.leave_body(key)).status_code, (403, 409))
         self.assertEqual(self.grant(key, 0).status_code, 403)
 
@@ -216,12 +309,12 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(self.client.post('/api/partners/leave', json=body).status_code, 403)
         old = self.leave_body(key, stamp=int(time.time()) - 3600)
         self.assertEqual(self.client.post('/api/partners/leave', json=old).status_code, 403)
-        self.assertEqual(self.client.get('/api/state', headers=self.auth).json()['partners'], 1)
+        self.assertEqual(self.client.get('/api/state', headers=self.auth).json()['partners'], 2)
 
     def test_leave_replay_rejected_for_other_partner_stamp(self):
         key, _ = self.partner('a')
         other, _ = self.partner('b')
-        stamp = int(time.time())
+        stamp = self.tick()
         self.assertEqual(self.grant(key, 0, stamp=stamp).status_code, 200)
         self.assertEqual(self.client.post('/api/partners/leave', json=self.leave_body(other, stamp=stamp)).status_code, 409)
 

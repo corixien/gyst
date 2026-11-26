@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from psycopg.rows import dict_row
 
-from gating import TIERS, verify_grant, verify_leave
+from gating import DEVICE_DOMAIN, INVITE_DOMAIN, LEAVE_DOMAIN, TIERS, account_message, setup_message, verify_grant, verify_signed
 
 HERE = Path(__file__).parent
 SCHEMA = (HERE / 'schema.sql').read_text()
@@ -57,7 +57,7 @@ def sha(text: str) -> str:
 def account_for(token: str | None, conn) -> str:
     if not token:
         raise HTTPException(401, 'token required')
-    row = conn.execute('SELECT id FROM accounts WHERE token_hash = %s', (sha(token),)).fetchone()
+    row = conn.execute('SELECT account_id AS id FROM devices WHERE token_hash = %s', (sha(token),)).fetchone()
     if row is None:
         raise HTTPException(401, 'unknown token')
     return str(row['id'])
@@ -101,6 +101,24 @@ class RegisterIn(BaseModel):
     name: str = Field(default='', max_length=60)
 
 
+class SetupIn(BaseModel):
+    pubkey: str = Field(pattern=r'^[0-9a-f]{64}$')
+    name: str = Field(default='', max_length=60)
+    stamp: int
+    signature: str
+
+
+class PartnerActionIn(BaseModel):
+    account_id: uuid.UUID
+    pubkey: str = Field(pattern=r'^[0-9a-f]{64}$')
+    stamp: int
+    signature: str
+
+
+class ClaimIn(BaseModel):
+    code: str = Field(min_length=4, max_length=20)
+
+
 class RemoveIn(BaseModel):
     partner_id: uuid.UUID
 
@@ -119,13 +137,67 @@ def valid_window(w: dict) -> bool:
             and isinstance(w.get('to'), str) and hhmm.match(w['to']) is not None)
 
 
-@app.post('/api/accounts')
-def create_account(conn=Depends(db)):
-    token = secrets.token_urlsafe(32)
+def partner_action(conn, body: PartnerActionIn, domain: bytes) -> None:
+    """Checks a request signed by a partner of the account and consumes its stamp."""
+    now = int(time.time())
+    account_id = str(body.account_id)
+    if conn.execute('SELECT 1 FROM partners WHERE account_id = %s AND pubkey = %s', (account_id, body.pubkey)).fetchone() is None:
+        raise HTTPException(403, 'unknown partner')
+    if not verify_signed(body.pubkey, account_message(domain, account_id, body.stamp), body.signature, body.stamp, now):
+        raise HTTPException(403, 'signature invalid or stamp too old')
+    row = conn.execute('SELECT last_stamp FROM account_state WHERE account_id = %s FOR UPDATE', (account_id,)).fetchone()
+    if row is None:
+        raise HTTPException(404, 'account not found')
+    if body.stamp <= row['last_stamp']:
+        raise HTTPException(409, 'token already used')
+    conn.execute('UPDATE account_state SET last_stamp = %s WHERE account_id = %s', (body.stamp, account_id))
+
+
+def new_code() -> str:
+    raw = ''.join(secrets.choice('ABCDEFGHJKMNPQRSTUVWXYZ23456789') for _ in range(8))
+    return f'{raw[:4]}-{raw[4:]}'
+
+
+def normalize_code(code: str) -> str:
+    return code.replace('-', '').replace(' ', '').upper()
+
+
+@app.post('/api/partner-setup')
+def partner_setup(body: SetupIn, conn=Depends(db)):
+    """A partner creates an account. The partner is its first partner, so no owner ever creates an account itself."""
+    now = int(time.time())
+    if not verify_signed(body.pubkey, setup_message(body.pubkey, body.stamp), body.signature, body.stamp, now):
+        raise HTTPException(403, 'signature invalid or stamp too old')
     account_id = uuid.uuid4()
-    conn.execute('INSERT INTO accounts (id, token_hash) VALUES (%s, %s)', (account_id, sha(token)))
+    unusable_token = secrets.token_urlsafe(32)  # no one gets it: owners use device tokens only
+    conn.execute('INSERT INTO accounts (id, token_hash) VALUES (%s, %s)', (account_id, sha(unusable_token)))
     conn.execute('INSERT INTO account_state (account_id) VALUES (%s)', (account_id,))
-    return {'account_id': str(account_id), 'token': token}
+    conn.execute('INSERT INTO partners (id, account_id, pubkey, name) VALUES (%s, %s, %s, %s)',
+                 (uuid.uuid4(), account_id, body.pubkey, body.name.strip()))
+    return {'account_id': str(account_id)}
+
+
+@app.post('/api/partner/device-codes')
+def device_code(body: PartnerActionIn, conn=Depends(db)):
+    """A partner issues a one-time code (10 min) that the owner enters to connect a device."""
+    partner_action(conn, body, DEVICE_DOMAIN)
+    code = new_code()
+    conn.execute("INSERT INTO device_codes (code_hash, account_id, expires_at) VALUES (%s, %s, now() + interval '10 minutes')",
+                 (sha(normalize_code(code)), str(body.account_id)))
+    return {'code': code, 'expires_in_minutes': 10}
+
+
+@app.post('/api/devices/claim')
+def claim_device(body: ClaimIn, conn=Depends(db)):
+    row = conn.execute(
+        'DELETE FROM device_codes WHERE code_hash = %s AND expires_at > now() RETURNING account_id',
+        (sha(normalize_code(body.code)),),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(400, 'code invalid, expired or used')
+    token = secrets.token_urlsafe(32)
+    conn.execute('INSERT INTO devices (token_hash, account_id) VALUES (%s, %s)', (sha(token), row['account_id']))
+    return {'account_id': str(row['account_id']), 'token': token}
 
 
 @app.get('/api/state')
@@ -232,7 +304,7 @@ def remove_partner(body: RemoveIn, account_id: str = Depends(auth), conn=Depends
 def leave_account(body: LeaveIn, conn=Depends(db)):
     """Partner ends its own role for one account. Signed with the partner key, always allowed."""
     now = int(time.time())
-    if not verify_leave(body.pubkey, body.account_id, body.stamp, body.signature, now):
+    if not verify_signed(body.pubkey, account_message(LEAVE_DOMAIN, body.account_id, body.stamp), body.signature, body.stamp, now):
         raise HTTPException(403, 'signature invalid or stamp too old')
     row = conn.execute('SELECT last_stamp FROM account_state WHERE account_id = %s FOR UPDATE', (body.account_id,)).fetchone()
     if row is None:
@@ -247,13 +319,14 @@ def leave_account(body: LeaveIn, conn=Depends(db)):
     return {'ok': True}
 
 
-@app.post('/api/invites')
-def create_invite(account_id: str = Depends(auth), conn=Depends(db)):
-    secret = secrets.token_urlsafe(16)
-    code = f'{account_id}.{secret}'
+@app.post('/api/partner/invites')
+def create_invite(body: PartnerActionIn, conn=Depends(db)):
+    """Only a partner can invite another partner (a device cannot), so an owner cannot add themselves."""
+    partner_action(conn, body, INVITE_DOMAIN)
+    code = f'{body.account_id}.{secrets.token_urlsafe(16)}'
     conn.execute(
         "INSERT INTO invites (code_hash, account_id, expires_at) VALUES (%s, %s, now() + make_interval(days => %s))",
-        (sha(code), account_id, INVITE_DAYS),
+        (sha(code), str(body.account_id), INVITE_DAYS),
     )
     return {'code': code, 'expires_in_days': INVITE_DAYS}
 

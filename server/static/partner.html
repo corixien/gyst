@@ -9,30 +9,34 @@
       main { max-width: 560px; margin: 32px auto; padding: 0 20px; }
       h1 { font-size: 22px; }
       h2 { font-size: 15px; color: #8b93a7; font-weight: 600; margin-top: 28px; }
-      input { width: 100%; box-sizing: border-box; background: #141821; color: #f2f4f8; border: 1px solid #262c3a; border-radius: 8px; padding: 10px; font-size: 15px; }
+      input { width: 100%; box-sizing: border-box; background: #141821; color: #f2f4f8; border: 1px solid #262c3a; border-radius: 8px; padding: 10px; font-size: 15px; margin-bottom: 8px; }
       button { background: #3b82f6; color: #fff; border: 0; border-radius: 8px; padding: 10px 14px; font-size: 15px; margin: 4px 4px 4px 0; cursor: pointer; }
       button.ghost { background: #262c3a; }
+      button.danger { background: #ff4d6d; }
       .card { background: #141821; border-radius: 10px; padding: 14px; margin-top: 10px; }
       .muted { color: #8b93a7; font-size: 14px; }
       .status { border-radius: 10px; padding: 12px 14px; margin-top: 16px; font-size: 15px; }
       .status.ok { background: #0f2a1d; color: #6ee7a8; }
       .status.error { background: #2a1219; color: #ff8fa3; }
+      .code { display: block; font-family: monospace; font-size: 22px; letter-spacing: 0.08em; background: #0b0d12; border-radius: 8px; padding: 10px; margin: 8px 0; user-select: all; color: #f2f4f8; }
       .card .title { font-weight: 700; margin-bottom: 6px; }
-      button.danger { background: #ff4d6d; }
-      input + input { margin-top: 8px; }
-      input { margin-bottom: 8px; }
-
     </style>
   </head>
   <body>
     <main>
       <h1>GYST Partner</h1>
+      <p class="muted">Ein Nutzer kann sich nicht selbst eintragen. Nur Partner legen Nutzer an, geben Gerätecodes und Einladungen aus.</p>
 
-      <h2>Nutzer hinzufügen</h2>
-      <p class="muted">Einladungscode vom Nutzer eingeben. Der Code gilt 24 Stunden und nur einmal. Dein Name steht danach in der Nutzer-Liste.</p>
+      <h2>Neuen Nutzer anlegen</h2>
+      <p class="muted">Du wirst automatisch sein erster Partner. Danach bekommst du einen Gerätecode für den Nutzer.</p>
+      <input id="ownerNew" type="text" maxlength="60" placeholder="Dein Name als Partner (z.B. Anna)" />
+      <p><button id="setup">Nutzer anlegen</button></p>
+
+      <h2>Als Partner zu einem bestehenden Nutzer</h2>
+      <p class="muted">Einladungscode von einem anderen Partner eingeben. Er gilt 24 Stunden und nur einmal.</p>
       <input id="invite" type="text" autocomplete="off" spellcheck="false" placeholder="Einladungscode" />
       <input id="partnerName" type="text" maxlength="60" placeholder="Dein Name (z.B. Anna)" />
-      <p><button id="register">Als Partner hinzufügen</button></p>
+      <p><button id="register" class="ghost">Als Partner hinzufügen</button></p>
 
       <h2>Deine Nutzer</h2>
       <div id="accounts"></div>
@@ -42,8 +46,7 @@
 
     <script>
       const API = location.origin;
-      const DOMAIN = new TextEncoder().encode('gyst-grant-v2');
-      const LEAVE_DOMAIN = new TextEncoder().encode('gyst-leave-v1');
+      const enc = (text) => new TextEncoder().encode(text);
       const TIERS = [
         { id: 0, label: '30 Minuten freigeben' },
         { id: 1, label: '1 Stunde freigeben' },
@@ -54,13 +57,15 @@
       const infoEl = document.getElementById('info');
       const accountsEl = document.getElementById('accounts');
 
-      // Everything stored on this device: one Ed25519 key pair per main user.
+      // One Ed25519 key pair per account and partner, stored only in this browser.
       const load = () => JSON.parse(localStorage.getItem('gyst-partner') ?? '[]');
       const save = (list) => localStorage.setItem('gyst-partner', JSON.stringify(list));
       const toHex = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+      const fromHex = (hex) => Uint8Array.from(hex.match(/../g).map((b) => parseInt(b, 16)));
       const toB64 = (bytes) => btoa(String.fromCharCode(...bytes));
       const fromB64 = (text) => Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
-      const uuidBytes = (uuid) => Uint8Array.from(uuid.replace(/-/g, '').match(/../g).map((b) => parseInt(b, 16)));
+      const uuidBytes = (uuid) => fromHex(uuid.replace(/-/g, ''));
+      const u32 = (n) => [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
       const clock = () => Math.floor(Date.now() / 1000);
 
       function left(seconds) {
@@ -72,7 +77,21 @@
       function show(kind, text) {
         infoEl.hidden = false;
         infoEl.className = `status ${kind}`;
-        infoEl.textContent = text;
+        infoEl.replaceChildren(document.createTextNode(text));
+      }
+
+      function showCode(title, code, note) {
+        infoEl.hidden = false;
+        infoEl.className = 'status ok';
+        const head = document.createElement('div');
+        head.textContent = title;
+        const box = document.createElement('code');
+        box.className = 'code';
+        box.textContent = code;
+        const hint = document.createElement('div');
+        hint.className = 'muted';
+        hint.textContent = note;
+        infoEl.replaceChildren(head, box, hint);
       }
 
       async function newPair() {
@@ -83,49 +102,13 @@
         };
       }
 
-      document.getElementById('register').addEventListener('click', async () => {
-        const invite = document.getElementById('invite').value.trim();
-        const name = document.getElementById('partnerName').value.trim();
-        if (!invite.includes('.') || !name) {
-          show('error', 'Einladungscode und dein Name sind nötig.');
-          return;
-        }
-        const pair = await newPair();
-        const response = await fetch(`${API}/api/partners/register`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ invite, pubkey: pair.pub, name }),
-        });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          show('error', `Hinzufügen fehlgeschlagen: ${data.detail ?? response.status}`);
-          return;
-        }
-        const accountId = data.account_id;
-        save([...load().filter((a) => a.account_id !== accountId), {
-          account_id: accountId, owner_name: data.owner_name || 'Nutzer', ...pair, last_stamp: 0,
-        }]);
-        document.getElementById('invite').value = '';
-        show('ok', `✓ Verbunden mit ${data.owner_name || 'dem Nutzer'}. Du kannst jetzt Freigaben senden.`);
-        render();
-      });
-
-      async function signed(entry, tierId) {
-        const stamp = Math.max(clock(), (entry.last_stamp ?? 0) + 1);
-        const message = new Uint8Array([
-          ...DOMAIN, ...uuidBytes(entry.account_id), tierId,
-          (stamp >>> 24) & 255, (stamp >>> 16) & 255, (stamp >>> 8) & 255, stamp & 255,
-        ]);
-        const key = await crypto.subtle.importKey('pkcs8', fromB64(entry.priv), { name: 'Ed25519' }, false, ['sign']);
-        const signature = new Uint8Array(await crypto.subtle.sign({ name: 'Ed25519' }, key, message));
-        return { stamp, body: { account_id: entry.account_id, pubkey: entry.pub, tier: tierId, stamp, signature: toB64(signature) } };
+      async function sign(priv, bytes) {
+        const key = await crypto.subtle.importKey('pkcs8', fromB64(priv), { name: 'Ed25519' }, false, ['sign']);
+        return toB64(new Uint8Array(await crypto.subtle.sign({ name: 'Ed25519' }, key, new Uint8Array(bytes))));
       }
 
-      async function grant(accountId, tier) {
-        const list = load();
-        const entry = list.find((a) => a.account_id === accountId);
-        const { stamp, body } = await signed(entry, tier.id);
-        const response = await fetch(`${API}/api/grant`, {
+      async function post(path, body) {
+        const response = await fetch(`${API}${path}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
@@ -133,18 +116,106 @@
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
           const detail = typeof data.detail === 'string' ? data.detail : response.status;
-          show('error', `✗ Nicht gesendet: ${detail}`);
+          throw new Error(String(detail));
+        }
+        return data;
+      }
+
+      // Partner-signed action on one account: message = domain + account + extra bytes + stamp.
+      async function actOn(entry, domain, extra, path, extraBody = {}) {
+        const stamp = Math.max(clock(), (entry.last_stamp ?? 0) + 1);
+        const signature = await sign(entry.priv, [...enc(domain), ...uuidBytes(entry.account_id), ...extra, ...u32(stamp)]);
+        const data = await post(path, { account_id: entry.account_id, pubkey: entry.pub, stamp, signature, ...extraBody });
+        entry.last_stamp = stamp;
+        return data;
+      }
+
+      document.getElementById('setup').addEventListener('click', async () => {
+        const name = document.getElementById('ownerNew').value.trim();
+        if (!name) {
+          show('error', 'Dein Name als Partner ist nötig.');
           return;
         }
-        entry.last_stamp = stamp;
-        save(list);
-        const now = data.now;
-        if (tier.id === 4) {
-          show('ok', `✓ Freigabe beendet bei ${entry.owner_name}. Der Nutzer ist wieder gesperrt.`);
-        } else if (tier.id === 3) {
-          show('ok', `✓ Einstellungen frei bei ${entry.owner_name}: noch ${left(data.settings_until - now)} (bis zum Speichern)`);
-        } else {
-          show('ok', `✓ Freigabe bei ${entry.owner_name} aktiv: noch ${left(data.grant_until - now)}`);
+        try {
+          const pair = await newPair();
+          const stamp = clock();
+          const signature = await sign(pair.priv, [...enc('gyst-setup-v1'), ...fromHex(pair.pub), ...u32(stamp)]);
+          const created = await post('/api/partner-setup', { pubkey: pair.pub, name, stamp, signature });
+          const entry = { account_id: created.account_id, owner_name: 'Nutzer', ...pair, last_stamp: 0 };
+          const code = await actOn(entry, 'gyst-device-v1', [], '/api/partner/device-codes');
+          save([...load(), entry]);
+          document.getElementById('ownerNew').value = '';
+          showCode('✓ Nutzer angelegt. Gerätecode für den Nutzer:', code.code, 'Gilt 10 Minuten. Im Add-on unter "Gerät verbinden" eingeben.');
+          render();
+        } catch (err) {
+          show('error', `✗ Nicht angelegt: ${err.message}`);
+        }
+      });
+
+      document.getElementById('register').addEventListener('click', async () => {
+        const invite = document.getElementById('invite').value.trim();
+        const name = document.getElementById('partnerName').value.trim();
+        if (!invite.includes('.') || !name) {
+          show('error', 'Einladungscode und dein Name sind nötig.');
+          return;
+        }
+        try {
+          const pair = await newPair();
+          const data = await post('/api/partners/register', { invite, pubkey: pair.pub, name });
+          save([...load().filter((a) => a.account_id !== data.account_id), {
+            account_id: data.account_id, owner_name: data.owner_name || 'Nutzer', ...pair, last_stamp: 0,
+          }]);
+          document.getElementById('invite').value = '';
+          show('ok', `✓ Du bist jetzt Partner bei ${data.owner_name || 'dem Nutzer'}.`);
+          render();
+        } catch (err) {
+          show('error', `Hinzufügen fehlgeschlagen: ${err.message}`);
+        }
+      });
+
+      async function grant(accountId, tier) {
+        const list = load();
+        const entry = list.find((a) => a.account_id === accountId);
+        try {
+          const data = await actOn(entry, 'gyst-grant-v2', [tier.id], '/api/grant', { tier: tier.id });
+          save(list);
+          const now = data.now;
+          if (tier.id === 4) {
+            show('ok', `✓ Freigabe beendet bei ${entry.owner_name}. Der Nutzer ist wieder gesperrt.`);
+          } else if (tier.id === 3) {
+            show('ok', `✓ Einstellungen frei bei ${entry.owner_name}: noch ${left(data.settings_until - now)} (bis zum Speichern)`);
+          } else {
+            show('ok', `✓ Freigabe bei ${entry.owner_name} aktiv: noch ${left(data.grant_until - now)}`);
+          }
+        } catch (err) {
+          save(list);
+          show('error', `✗ Nicht gesendet: ${err.message}`);
+        }
+      }
+
+      async function deviceCode(accountId) {
+        const list = load();
+        const entry = list.find((a) => a.account_id === accountId);
+        try {
+          const data = await actOn(entry, 'gyst-device-v1', [], '/api/partner/device-codes');
+          save(list);
+          showCode(`Gerätecode für ${entry.owner_name}:`, data.code, `Gilt ${data.expires_in_minutes} Minuten, einmal nutzbar. Im Add-on unter "Gerät verbinden" eingeben.`);
+        } catch (err) {
+          save(list);
+          show('error', `✗ Kein Code: ${err.message}`);
+        }
+      }
+
+      async function invite(accountId) {
+        const list = load();
+        const entry = list.find((a) => a.account_id === accountId);
+        try {
+          const data = await actOn(entry, 'gyst-invite-v1', [], '/api/partner/invites');
+          save(list);
+          showCode(`Einladung für einen weiteren Partner bei ${entry.owner_name}:`, data.code, 'Gilt 24 Stunden, einmal nutzbar. Der neue Partner trägt sie oben unter "Als Partner hinzufügen" ein.');
+        } catch (err) {
+          save(list);
+          show('error', `✗ Keine Einladung: ${err.message}`);
         }
       }
 
@@ -153,27 +224,23 @@
         const list = load();
         const entry = list.find((a) => a.account_id === accountId);
         if (!entry || !confirm(`Wirklich aus ${entry.owner_name} austreten? Danach kannst du dort keine Freigaben mehr senden.`)) return;
-        const stamp = Math.max(clock(), (entry.last_stamp ?? 0) + 1);
-        const message = new Uint8Array([
-          ...LEAVE_DOMAIN, ...uuidBytes(accountId),
-          (stamp >>> 24) & 255, (stamp >>> 16) & 255, (stamp >>> 8) & 255, stamp & 255,
-        ]);
-        const key = await crypto.subtle.importKey('pkcs8', fromB64(entry.priv), { name: 'Ed25519' }, false, ['sign']);
-        const signature = new Uint8Array(await crypto.subtle.sign({ name: 'Ed25519' }, key, message));
-        const response = await fetch(`${API}/api/partners/leave`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ account_id: accountId, pubkey: entry.pub, stamp, signature: toB64(signature) }),
-        });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          const detail = typeof data.detail === 'string' ? data.detail : response.status;
-          show('error', `✗ Nicht entfernt: ${detail}`);
-          return;
+        try {
+          await actOn(entry, 'gyst-leave-v1', [], '/api/partners/leave');
+          save(list.filter((a) => a.account_id !== accountId));
+          show('ok', `✓ Du bist bei ${entry.owner_name} nicht mehr Partner.`);
+          render();
+        } catch (err) {
+          save(list);
+          show('error', `✗ Nicht entfernt: ${err.message}`);
         }
-        save(list.filter((a) => a.account_id !== accountId));
-        show('ok', `✓ Du bist bei ${entry.owner_name} nicht mehr Partner. Dort gilt wieder der Satz oder andere Partner.`);
-        render();
+      }
+
+      function button(label, onClick, className = '') {
+        const btn = document.createElement('button');
+        btn.textContent = label;
+        if (className) btn.className = className;
+        btn.addEventListener('click', onClick);
+        return btn;
       }
 
       function render() {
@@ -186,18 +253,12 @@
           title.className = 'title';
           title.textContent = entry.owner_name;
           card.append(title);
+          card.append(button('Gerätecode für den Nutzer', () => deviceCode(entry.account_id), 'ghost'));
+          card.append(button('Einladung für weiteren Partner', () => invite(entry.account_id), 'ghost'));
           for (const tier of TIERS) {
-            const btn = document.createElement('button');
-            btn.textContent = tier.label;
-            if (tier.danger) btn.className = 'danger';
-            btn.addEventListener('click', () => grant(entry.account_id, tier));
-            card.append(btn);
+            card.append(button(tier.label, () => grant(entry.account_id, tier), tier.danger ? 'danger' : ''));
           }
-          const leaveBtn = document.createElement('button');
-          leaveBtn.className = 'ghost';
-          leaveBtn.textContent = 'Nutzer entfernen (nicht mehr Partner sein)';
-          leaveBtn.addEventListener('click', () => leave(entry.account_id));
-          card.append(leaveBtn);
+          card.append(button('Nutzer entfernen (nicht mehr Partner sein)', () => leave(entry.account_id), 'ghost'));
           accountsEl.append(card);
         }
         if (list.length === 0) accountsEl.textContent = 'Noch keine Nutzer.';

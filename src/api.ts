@@ -35,8 +35,9 @@ export async function apiCall<T>(server: string, path: string, init: { method?: 
   return data as T;
 }
 
-export const createAccount = (server: string) =>
-  apiCall<{ account_id: string; token: string }>(server, '/api/accounts', { method: 'POST' });
+// Connects this device with the code a partner issued (10 minutes, one use).
+export const claimDevice = (server: string, code: string) =>
+  apiCall<{ account_id: string; token: string }>(server, '/api/devices/claim', { method: 'POST', body: { code } });
 
 export const fetchState = (server: string, token: string) => apiCall<RemoteState>(server, '/api/state', { token });
 
@@ -65,5 +66,3 @@ export const addSite = (server: string, token: string, domain: string) =>
 export const setEnabled = (server: string, token: string, enabled: boolean) =>
   apiCall<{ ok: boolean }>(server, '/api/enabled', { method: 'POST', token, body: { enabled } });
 
-export const createInvite = (server: string, token: string) =>
-  apiCall<{ code: string; expires_in_days: number }>(server, '/api/invites', { method: 'POST', token });

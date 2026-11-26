@@ -35,3 +35,16 @@ CREATE TABLE IF NOT EXISTS grant_log (
   tier text NOT NULL,
   granted_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Owner devices get their token from a partner-issued code (see /api/devices/claim).
+CREATE TABLE IF NOT EXISTS devices (
+  token_hash text PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS device_codes (
+  code_hash text PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  expires_at timestamptz NOT NULL
+);

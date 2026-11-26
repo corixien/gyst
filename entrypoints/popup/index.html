@@ -51,28 +51,24 @@
         <h2 data-i18n="inviteTitle"></h2>
         <ul id="partnerList" class="sites"></ul>
         <p class="hint" data-i18n="removePartnerHint"></p>
-        <div class="row-form">
-          <button id="invite" type="button" class="btn" data-i18n="inviteButton"></button>
-        </div>
-        <p id="inviteHint" class="hint" hidden data-i18n="inviteHint"></p>
-        <code id="inviteCode" class="code" hidden></code>
       </section>
 
-      <details class="device">
+      <details id="device" class="device">
         <summary data-i18n="deviceTitle"></summary>
+        <p id="connectHint" class="error" hidden data-i18n="connectHint"></p>
+        <label class="field">
+          <span data-i18n="connectToken"></span>
+          <input id="connectToken" type="text" autocomplete="off" spellcheck="false" />
+        </label>
+        <div class="row-form">
+          <button id="connect" type="button" class="btn" data-i18n="connectButton"></button>
+        </div>
         <div class="row-form">
           <button id="showToken" type="button" class="btn ghost" data-i18n="showToken"></button>
         </div>
         <div id="tokenBox" hidden>
           <p class="hint" data-i18n="tokenShown"></p>
           <code id="tokenValue" class="code"></code>
-        </div>
-        <label class="field">
-          <span data-i18n="connectToken"></span>
-          <input id="connectToken" type="text" autocomplete="off" spellcheck="false" />
-        </label>
-        <div class="row-form">
-          <button id="connect" type="button" class="btn ghost" data-i18n="connectButton"></button>
         </div>
       </details>
 

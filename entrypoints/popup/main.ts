@@ -3,8 +3,7 @@ import {
   ApiError,
   DEFAULT_SERVER,
   addSite,
-  createAccount,
-  createInvite,
+  claimDevice,
   fetchPartners,
   putSettings,
   removePartner,
@@ -70,8 +69,8 @@ const grantText = $<HTMLSpanElement>('grantText');
 const notice = $<HTMLParagraphElement>('notice');
 const syncState = $<HTMLParagraphElement>('syncState');
 const partnerList = $<HTMLUListElement>('partnerList');
-const inviteButton = $<HTMLButtonElement>('invite');
-const inviteCode = $<HTMLElement>('inviteCode');
+const deviceBox = $<HTMLDetailsElement>('device');
+const connectHint = $<HTMLParagraphElement>('connectHint');
 const showTokenButton = $<HTMLButtonElement>('showToken');
 const tokenBox = $<HTMLDivElement>('tokenBox');
 const tokenValue = $<HTMLElement>('tokenValue');
@@ -275,7 +274,8 @@ async function refreshAuthoritative() {
   partners = remote.partners ?? 0;
   const signedIn = (await accountItem.getValue()) !== null;
   syncState.hidden = !signedIn || remote.synced !== false;
-  inviteButton.disabled = !signedIn;
+  connectHint.hidden = signedIn;
+  if (!signedIn) deviceBox.open = true;
   if (signedIn) void loadPartners();
   renderToggle();
   renderRules();
@@ -465,19 +465,6 @@ for (const input of [displayNameInput, popupMessageInput, blockMessageInput, lan
   });
 }
 
-inviteButton.onclick = async () => {
-  const account = await accountItem.getValue();
-  if (!account) return;
-  try {
-    const { code } = await createInvite(account.server, account.token);
-    inviteCode.textContent = code;
-    inviteCode.hidden = false;
-    inviteCode.onclick = () => void navigator.clipboard?.writeText(code);
-  } catch {
-    syncState.hidden = false;
-  }
-};
-
 showTokenButton.onclick = async () => {
   const account = await accountItem.getValue();
   if (!account) return;
@@ -485,25 +472,20 @@ showTokenButton.onclick = async () => {
   tokenBox.hidden = false;
 };
 
+// Connects this device with a code the partner issued. The device token then replaces any local-only state.
 $<HTMLButtonElement>('connect').onclick = async () => {
-  const token = connectToken.value.trim();
-  if (!token) return;
-  await accountItem.setValue({ server: DEFAULT_SERVER, token, accountId: '' });
-  connectToken.value = '';
-  await syncNow();
-  await refreshAuthoritative();
-};
-
-// First open creates the account on the default server. Nothing to fill in.
-async function ensureAccount() {
-  if ((await accountItem.getValue()) !== null) return;
+  const code = connectToken.value.trim();
+  if (!code) return;
   try {
-    const created = await createAccount(DEFAULT_SERVER);
-    await accountItem.setValue({ server: DEFAULT_SERVER, token: created.token, accountId: created.account_id });
-  } catch {
-    syncState.hidden = false;
+    const claimed = await claimDevice(DEFAULT_SERVER, code);
+    await accountItem.setValue({ server: DEFAULT_SERVER, token: claimed.token, accountId: claimed.account_id });
+    connectToken.value = '';
+    await syncNow();
+    await refreshAuthoritative();
+  } catch (err) {
+    say(err instanceof ApiError && err.status === 400 ? t('errorCode', locale) : t('errorGeneric', locale));
   }
-}
+};
 
 // Draft starts as a copy of the last saved state. Reopening the popup therefore discards unsaved edits.
 function fromSettings(): Draft {
@@ -531,7 +513,6 @@ async function init() {
       return label;
     }),
   );
-  await ensureAccount();
   await syncNow();
   await refreshAuthoritative();
   draft = fromSettings();
