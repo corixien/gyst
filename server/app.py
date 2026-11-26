@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from psycopg.rows import dict_row
 
-from gating import TIERS, verify_grant
+from gating import TIERS, verify_grant, verify_leave
 
 HERE = Path(__file__).parent
 SCHEMA = (HERE / 'schema.sql').read_text()
@@ -101,6 +101,17 @@ class RegisterIn(BaseModel):
     name: str = Field(default='', max_length=60)
 
 
+class RemoveIn(BaseModel):
+    partner_id: uuid.UUID
+
+
+class LeaveIn(BaseModel):
+    account_id: str
+    pubkey: str = Field(pattern=r'^[0-9a-f]{64}$')
+    stamp: int
+    signature: str
+
+
 def valid_window(w: dict) -> bool:
     hhmm = re.compile(r'^([01]\d|2[0-3]):[0-5]\d$')
     return (isinstance(w.get('day'), int) and 0 <= w['day'] <= 6
@@ -151,6 +162,10 @@ def put_settings(body: SettingsIn, account_id: str = Depends(auth), conn=Depends
     first_save = not row['settings']
     if has_partner and not first_save and not (time_grant or settings_grant):
         raise HTTPException(403, {'error': 'grant_required'})
+    # A settings grant must not switch the block off: switching off always needs a time grant.
+    switching_off = not first_save and (row['settings'] or {}).get('enabled') and not body.enabled
+    if has_partner and switching_off and not time_grant:
+        raise HTTPException(403, {'error': 'grant_required'})
     settings_until = row['settings_until'] if (time_grant or first_save or not has_partner) else 0
     settings = body.model_dump(exclude={'free_windows'})
     conn.execute(
@@ -178,20 +193,58 @@ def add_site(body: SiteIn, account_id: str = Depends(auth), conn=Depends(db)):
 
 @app.post('/api/enabled')
 def set_enabled(body: EnabledIn, account_id: str = Depends(auth), conn=Depends(db)):
-    """Turning the block on is free. Turning it off needs a running time grant (partner)."""
+    """Turning the block on is free and ends a running grant: the rest of the grant is lost.
+    Turning it off needs a running time grant (partner)."""
     row, has_partner = locked_state(conn, account_id)
     now = int(time.time())
     if not body.enabled and has_partner and row['grant_until'] <= now:
         raise HTTPException(403, {'error': 'grant_required'})
     settings = {**(row['settings'] or {}), 'enabled': body.enabled}
-    conn.execute('UPDATE account_state SET settings = %s WHERE account_id = %s', (json.dumps(settings), account_id))
+    grant_until = 0 if body.enabled else row['grant_until']
+    conn.execute('UPDATE account_state SET settings = %s, grant_until = %s WHERE account_id = %s',
+                 (json.dumps(settings), grant_until, account_id))
     return {'ok': True}
 
 
 @app.get('/api/partners')
 def list_partners(account_id: str = Depends(auth), conn=Depends(db)):
-    rows = conn.execute('SELECT name, created_at FROM partners WHERE account_id = %s ORDER BY created_at', (account_id,)).fetchall()
-    return {'partners': [{'name': r['name'] or 'Unbenannt', 'since': r['created_at'].isoformat()} for r in rows]}
+    rows = conn.execute('SELECT id, name, created_at FROM partners WHERE account_id = %s ORDER BY created_at',
+                        (account_id,)).fetchall()
+    return {'partners': [{'id': str(r['id']), 'name': r['name'] or 'Unbenannt', 'since': r['created_at'].isoformat()}
+                         for r in rows]}
+
+
+@app.post('/api/partners/remove')
+def remove_partner(body: RemoveIn, account_id: str = Depends(auth), conn=Depends(db)):
+    """Owner removes a partner. Needs a running time grant, like switching the block off; otherwise the owner
+    could drop the partners that gate everything else."""
+    row, _ = locked_state(conn, account_id)
+    if row['grant_until'] <= int(time.time()):
+        raise HTTPException(403, {'error': 'grant_required'})
+    deleted = conn.execute('DELETE FROM partners WHERE id = %s AND account_id = %s RETURNING id',
+                           (body.partner_id, account_id)).fetchone()
+    if deleted is None:
+        raise HTTPException(404, 'partner not found')
+    return {'ok': True}
+
+
+@app.post('/api/partners/leave')
+def leave_account(body: LeaveIn, conn=Depends(db)):
+    """Partner ends its own role for one account. Signed with the partner key, always allowed."""
+    now = int(time.time())
+    if not verify_leave(body.pubkey, body.account_id, body.stamp, body.signature, now):
+        raise HTTPException(403, 'signature invalid or stamp too old')
+    row = conn.execute('SELECT last_stamp FROM account_state WHERE account_id = %s FOR UPDATE', (body.account_id,)).fetchone()
+    if row is None:
+        raise HTTPException(404, 'account not found')
+    if body.stamp <= row['last_stamp']:
+        raise HTTPException(409, 'token already used')
+    deleted = conn.execute('DELETE FROM partners WHERE account_id = %s AND pubkey = %s RETURNING id',
+                           (body.account_id, body.pubkey)).fetchone()
+    if deleted is None:
+        raise HTTPException(403, 'unknown partner')
+    conn.execute('UPDATE account_state SET last_stamp = %s WHERE account_id = %s', (body.stamp, body.account_id))
+    return {'ok': True}
 
 
 @app.post('/api/invites')

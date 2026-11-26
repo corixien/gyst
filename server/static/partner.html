@@ -43,6 +43,7 @@
     <script>
       const API = location.origin;
       const DOMAIN = new TextEncoder().encode('gyst-grant-v2');
+      const LEAVE_DOMAIN = new TextEncoder().encode('gyst-leave-v1');
       const TIERS = [
         { id: 0, label: '30 Minuten freigeben' },
         { id: 1, label: '1 Stunde freigeben' },
@@ -147,6 +148,34 @@
         }
       }
 
+      // Partner ends its own role for one account. Always allowed, no grant needed.
+      async function leave(accountId) {
+        const list = load();
+        const entry = list.find((a) => a.account_id === accountId);
+        if (!entry || !confirm(`Wirklich aus ${entry.owner_name} austreten? Danach kannst du dort keine Freigaben mehr senden.`)) return;
+        const stamp = Math.max(clock(), (entry.last_stamp ?? 0) + 1);
+        const message = new Uint8Array([
+          ...LEAVE_DOMAIN, ...uuidBytes(accountId),
+          (stamp >>> 24) & 255, (stamp >>> 16) & 255, (stamp >>> 8) & 255, stamp & 255,
+        ]);
+        const key = await crypto.subtle.importKey('pkcs8', fromB64(entry.priv), { name: 'Ed25519' }, false, ['sign']);
+        const signature = new Uint8Array(await crypto.subtle.sign({ name: 'Ed25519' }, key, message));
+        const response = await fetch(`${API}/api/partners/leave`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ account_id: accountId, pubkey: entry.pub, stamp, signature: toB64(signature) }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const detail = typeof data.detail === 'string' ? data.detail : response.status;
+          show('error', `✗ Nicht entfernt: ${detail}`);
+          return;
+        }
+        save(list.filter((a) => a.account_id !== accountId));
+        show('ok', `✓ Du bist bei ${entry.owner_name} nicht mehr Partner. Dort gilt wieder der Satz oder andere Partner.`);
+        render();
+      }
+
       function render() {
         accountsEl.replaceChildren();
         const list = load();
@@ -164,6 +193,11 @@
             btn.addEventListener('click', () => grant(entry.account_id, tier));
             card.append(btn);
           }
+          const leaveBtn = document.createElement('button');
+          leaveBtn.className = 'ghost';
+          leaveBtn.textContent = 'Nutzer entfernen (nicht mehr Partner sein)';
+          leaveBtn.addEventListener('click', () => leave(entry.account_id));
+          card.append(leaveBtn);
           accountsEl.append(card);
         }
         if (list.length === 0) accountsEl.textContent = 'Noch keine Nutzer.';

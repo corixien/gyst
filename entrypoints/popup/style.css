@@ -327,3 +327,27 @@ dialog input {
   background: var(--track);
   color: var(--muted);
 }
+
+details.device {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px;
+}
+
+details.device > summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+details.device[open] > summary {
+  margin-bottom: 10px;
+}
+
+details.device > *:not(summary) {
+  margin-top: 10px;
+}

@@ -47,8 +47,17 @@ export const putSettings = (server: string, token: string, settings: Settings, f
     body: { ...settings, free_windows: freeWindows },
   });
 
+export interface PartnerInfo {
+  id: string;
+  name: string;
+  since: string;
+}
+
 export const fetchPartners = (server: string, token: string) =>
-  apiCall<{ partners: { name: string; since: string }[] }>(server, '/api/partners', { token });
+  apiCall<{ partners: PartnerInfo[] }>(server, '/api/partners', { token });
+
+export const removePartner = (server: string, token: string, partnerId: string) =>
+  apiCall<{ ok: boolean }>(server, '/api/partners/remove', { method: 'POST', token, body: { partner_id: partnerId } });
 
 export const addSite = (server: string, token: string, domain: string) =>
   apiCall<{ ok: boolean; sites: string[] }>(server, '/api/sites', { method: 'POST', token, body: { domain } });

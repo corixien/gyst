@@ -23,7 +23,11 @@ WXT 0.21 + TypeScript + Vitest, MV3. Vanilla TS + CSS. `storage.local`, DNR dyna
 
 ## Current state (0.2.0, version kept until the Freigabe feature is done; zips are overwritten)
 - Known limit: the account token on the device can create invites, so the owner can register a partner key of their own. Only a third party identity (e.g. email confirmation to an address the owner does not control) closes this. Not built, decision pending.
-- Server v1: 15 API tests against local Postgres (podman container, port 55432, test only). Partner page served at `/partner`.
+- Partner removal: partner page button (signed `gyst-leave-v1`, always free). Owner removal in add-on needs a running time grant (`POST /api/partners/remove`).
+- Toggle: a running grant shows Off; tapping turns the block on at once and ends the grant (`/api/enabled` with true zeroes `grant_until`). Settings grant cannot switch the block off.
+- Without partners the typed sentence (10 s) guards turn-off and Save; with partners the sentence field is hidden and rule hint says so.
+- Popup: no "Konto" section. Account is created on first open (default server). Token and connect-by-token live in a collapsed "Gerät verbinden" block.
+- Server: 27 API tests against local Postgres (podman container, port 55432, test only). Partner page served at `/partner`.
 - Add-on: account, invite, sync, gated changes, blocking, block-page release. Verified in headless Chrome (popup, partner grant, gated removal refused, block and release).
 - NOT done: Firefox desktop run with companion, Firefox Android test, Render deploy, Neon DB (user creates both), companion lock on real hardware.
 - Dev DB container: `podman run -d --name gyst-pg-test -e POSTGRES_PASSWORD=test -e POSTGRES_DB=gyst -p 55432:5432 docker.io/library/postgres:16-alpine`

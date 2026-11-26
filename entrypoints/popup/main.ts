@@ -1,5 +1,16 @@
 import { browser } from 'wxt/browser';
-import { ApiError, DEFAULT_SERVER, addSite, createAccount, createInvite, fetchPartners, putSettings, setEnabled } from '../../src/api';
+import {
+  ApiError,
+  DEFAULT_SERVER,
+  addSite,
+  createAccount,
+  createInvite,
+  fetchPartners,
+  putSettings,
+  removePartner,
+  setEnabled,
+  type PartnerInfo,
+} from '../../src/api';
 import { normalizeDomain } from '../../src/blocklist';
 import { matchesSentence } from '../../src/confirm';
 import { defaultPopupMessage, resolveLocale, t, type Locale, type MessageKey } from '../../src/i18n';
@@ -19,8 +30,6 @@ let freeWindows: FreeWindow[] = [];
 let grantUntil = 0;
 let settingsUntil = 0;
 let partners = 0;
-let partnerNames: string[] = [];
-let signedIn = false;
 
 interface Draft {
   displayName: string;
@@ -39,8 +48,10 @@ const siteError = $<HTMLParagraphElement>('siteError');
 const sitesList = $<HTMLUListElement>('sites');
 const displayNameInput = $<HTMLInputElement>('displayName');
 const popupMessageInput = $<HTMLInputElement>('popupMessage');
+const popupField = $<HTMLLabelElement>('popupField');
 const blockMessageInput = $<HTMLInputElement>('blockMessage');
 const languageSelect = $<HTMLSelectElement>('language');
+const ruleHint = $<HTMLParagraphElement>('ruleHint');
 const saveButton = $<HTMLButtonElement>('save');
 const saveHint = $<HTMLElement>('saveHint');
 const saved = $<HTMLElement>('saved');
@@ -58,19 +69,20 @@ const grantBox = $<HTMLDivElement>('grant');
 const grantText = $<HTMLSpanElement>('grantText');
 const notice = $<HTMLParagraphElement>('notice');
 const syncState = $<HTMLParagraphElement>('syncState');
-const partnersText = $<HTMLParagraphElement>('partners');
+const partnerList = $<HTMLUListElement>('partnerList');
 const inviteButton = $<HTMLButtonElement>('invite');
 const inviteCode = $<HTMLElement>('inviteCode');
-const accountStatus = $<HTMLParagraphElement>('accountStatus');
-const accountForm = $<HTMLDivElement>('accountForm');
-const serverUrl = $<HTMLInputElement>('serverUrl');
+const showTokenButton = $<HTMLButtonElement>('showToken');
 const tokenBox = $<HTMLDivElement>('tokenBox');
 const tokenValue = $<HTMLElement>('tokenValue');
+const connectToken = $<HTMLInputElement>('connectToken');
 
 const nowSeconds = () => Date.now() / 1000;
 const popupMessage = () => settings.popupMessage.trim() || defaultPopupMessage(locale);
 const grantActive = () => grantUntil > nowSeconds();
 const settingsOpen = () => settingsUntil > nowSeconds();
+// On = enabled and not paused by a grant. A running grant shows Off; tapping it turns the block back on.
+const isOn = () => settings.enabled && !grantActive();
 
 function applyLocale() {
   locale = resolveLocale(settings.language, browser.i18n.getUILanguage());
@@ -125,15 +137,21 @@ function dirty(): boolean {
   );
 }
 
-// Toggle shows Off while a grant pauses the block. The block itself is paused in the background too.
 function renderToggle() {
   const paused = settings.enabled && grantActive();
-  const on = settings.enabled && !paused;
+  const on = isOn();
   toggle.textContent = paused ? t('pausedByGrant', locale) : t(on ? 'on' : 'off', locale);
   toggle.classList.toggle('on', on);
   toggle.classList.toggle('paused', paused);
   toggle.setAttribute('aria-pressed', String(on));
   toggle.title = paused ? t('pausedHint', locale) : '';
+}
+
+// Which rule applies is shown in the settings. The typed sentence only exists without partners.
+function renderRules() {
+  const withPartner = partners > 0;
+  ruleHint.textContent = t(withPartner ? 'ruleWithPartner' : 'ruleNoPartner', locale);
+  popupField.hidden = withPartner;
 }
 
 function renderDraft() {
@@ -190,8 +208,7 @@ function renderDraft() {
     empty.textContent = t('freeEmpty', locale);
     freeList.append(empty);
   }
-  const changed = dirty();
-  saveHint.hidden = !changed;
+  saveHint.hidden = !dirty();
   saveHint.textContent = t('unsaved', locale);
 }
 
@@ -199,27 +216,53 @@ function renderDraft() {
 const weekdayName = (day: number, style: 'long' | 'short' = 'long') =>
   new Intl.DateTimeFormat(locale, { weekday: style }).format(new Date(2026, 0, 5 + day));
 
-// Partner names, so the owner sees who is connected.
-async function loadPartnerNames() {
+// Partners of this account. Each one can be removed; removing a partner needs a running grant.
+async function loadPartners() {
   const account = await accountItem.getValue();
   if (!account) return;
   try {
     const { partners: list } = await fetchPartners(account.server, account.token);
-    partnerNames = list.map((p) => p.name);
-    partners = list.length;
-    partnersText.textContent = partnerNames.length
-      ? t('partnerList', locale, { names: partnerNames.join(', ') })
-      : t('partnersCount', locale, { count: 0 });
+    renderPartners(list);
   } catch {
     syncState.hidden = false;
   }
 }
 
-function renderAccount() {
-  accountStatus.textContent = signedIn ? '' : t('notSignedIn', locale);
-  accountForm.hidden = signedIn;
-  partnersText.textContent = signedIn ? t('partnersCount', locale, { count: partners }) : '';
-  inviteButton.disabled = !signedIn;
+function renderPartners(list: PartnerInfo[]) {
+  partnerList.replaceChildren(
+    ...list.map((partner) => {
+      const item = document.createElement('li');
+      const name = document.createElement('span');
+      name.textContent = partner.name;
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'btn ghost small';
+      remove.textContent = t('remove', locale);
+      remove.onclick = () => void removePartnerNow(partner.id);
+      item.append(name, remove);
+      return item;
+    }),
+  );
+  if (list.length === 0) {
+    const empty = document.createElement('li');
+    empty.className = 'empty';
+    empty.textContent = t('noPartners', locale);
+    partnerList.append(empty);
+  }
+}
+
+async function removePartnerNow(partnerId: string) {
+  const account = await accountItem.getValue();
+  if (!account) return;
+  try {
+    await removePartner(account.server, account.token, partnerId);
+  } catch (err) {
+    say(err instanceof ApiError && err.status === 403 ? t('grantRequired', locale) : t('errorGeneric', locale));
+    return;
+  }
+  say(null);
+  await syncNow();
+  await refreshAuthoritative();
 }
 
 // Reads the local copies that sync keeps up to date. The draft is left alone.
@@ -230,12 +273,13 @@ async function refreshAuthoritative() {
   grantUntil = remote.grant_until ?? 0;
   settingsUntil = remote.settings_until ?? 0;
   partners = remote.partners ?? 0;
-  signedIn = (await accountItem.getValue()) !== null;
+  const signedIn = (await accountItem.getValue()) !== null;
   syncState.hidden = !signedIn || remote.synced !== false;
-  if (signedIn) void loadPartnerNames();
+  inviteButton.disabled = !signedIn;
+  if (signedIn) void loadPartners();
   renderToggle();
+  renderRules();
   renderGrant();
-  renderAccount();
   if (ready) renderDraft();
 }
 
@@ -334,13 +378,11 @@ function flashSaved() {
 
 saveButton.onclick = () => void save();
 
+// Tapping while a grant pauses the block turns it back on at once and ends the grant.
+// Turning off needs a grant with partners, and the typed sentence without partners.
 toggle.onclick = async () => {
-  if (grantActive() && settings.enabled) {
-    say(t('pausedHint', locale), false);
-    return;
-  }
   const account = await accountItem.getValue();
-  const turnOn = !settings.enabled;
+  const turnOn = !isOn();
   if (!account) {
     const apply = async () => {
       await settingsItem.setValue({ ...settings, enabled: turnOn });
@@ -436,32 +478,32 @@ inviteButton.onclick = async () => {
   }
 };
 
-$<HTMLButtonElement>('createAccount').onclick = async () => {
-  const server = serverUrl.value.trim() || DEFAULT_SERVER;
-  try {
-    const created = await createAccount(server);
-    await accountItem.setValue({ server, token: created.token, accountId: created.account_id });
-    tokenValue.textContent = created.token;
-    tokenBox.hidden = false;
-  } catch {
-    syncState.hidden = false;
-  }
+showTokenButton.onclick = async () => {
+  const account = await accountItem.getValue();
+  if (!account) return;
+  tokenValue.textContent = account.token;
+  tokenBox.hidden = false;
 };
 
 $<HTMLButtonElement>('connect').onclick = async () => {
-  const token = $<HTMLInputElement>('connectToken').value.trim();
+  const token = connectToken.value.trim();
   if (!token) return;
-  const server = serverUrl.value.trim() || DEFAULT_SERVER;
-  await accountItem.setValue({ server, token, accountId: '' });
+  await accountItem.setValue({ server: DEFAULT_SERVER, token, accountId: '' });
+  connectToken.value = '';
   await syncNow();
   await refreshAuthoritative();
 };
 
-$<HTMLButtonElement>('tokenSaved').onclick = async () => {
-  tokenBox.hidden = true;
-  tokenValue.textContent = '';
-  await refreshAuthoritative();
-};
+// First open creates the account on the default server. Nothing to fill in.
+async function ensureAccount() {
+  if ((await accountItem.getValue()) !== null) return;
+  try {
+    const created = await createAccount(DEFAULT_SERVER);
+    await accountItem.setValue({ server: DEFAULT_SERVER, token: created.token, accountId: created.account_id });
+  } catch {
+    syncState.hidden = false;
+  }
+}
 
 // Draft starts as a copy of the last saved state. Reopening the popup therefore discards unsaved edits.
 function fromSettings(): Draft {
@@ -476,7 +518,6 @@ function fromSettings(): Draft {
 }
 
 async function init() {
-  serverUrl.value = (await accountItem.getValue())?.server ?? DEFAULT_SERVER;
   settings = normalizeSettings(await settingsItem.getValue());
   draft = fromSettings();
   applyLocale();
@@ -490,6 +531,7 @@ async function init() {
       return label;
     }),
   );
+  await ensureAccount();
   await syncNow();
   await refreshAuthoritative();
   draft = fromSettings();

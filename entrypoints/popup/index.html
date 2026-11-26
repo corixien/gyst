@@ -49,7 +49,8 @@
 
       <section class="group">
         <h2 data-i18n="inviteTitle"></h2>
-        <p id="partners" class="hint"></p>
+        <ul id="partnerList" class="sites"></ul>
+        <p class="hint" data-i18n="removePartnerHint"></p>
         <div class="row-form">
           <button id="invite" type="button" class="btn" data-i18n="inviteButton"></button>
         </div>
@@ -57,41 +58,32 @@
         <code id="inviteCode" class="code" hidden></code>
       </section>
 
-      <section class="group">
-        <h2 data-i18n="accountTitle"></h2>
-        <p id="accountStatus" class="hint" data-i18n="notSignedIn"></p>
-        <div id="accountForm">
-          <label class="field">
-            <span data-i18n="serverLabel"></span>
-            <input id="serverUrl" type="url" autocomplete="off" spellcheck="false" />
-          </label>
-          <div class="row-form">
-            <button id="createAccount" type="button" class="btn" data-i18n="createAccount"></button>
-          </div>
-          <label class="field">
-            <span data-i18n="connectToken"></span>
-            <input id="connectToken" type="text" autocomplete="off" spellcheck="false" />
-          </label>
-          <div class="row-form">
-            <button id="connect" type="button" class="btn ghost" data-i18n="connectButton"></button>
-          </div>
+      <details class="device">
+        <summary data-i18n="deviceTitle"></summary>
+        <div class="row-form">
+          <button id="showToken" type="button" class="btn ghost" data-i18n="showToken"></button>
         </div>
         <div id="tokenBox" hidden>
           <p class="hint" data-i18n="tokenShown"></p>
           <code id="tokenValue" class="code"></code>
-          <div class="row-form">
-            <button id="tokenSaved" type="button" class="btn" data-i18n="tokenSaved"></button>
-          </div>
         </div>
-      </section>
+        <label class="field">
+          <span data-i18n="connectToken"></span>
+          <input id="connectToken" type="text" autocomplete="off" spellcheck="false" />
+        </label>
+        <div class="row-form">
+          <button id="connect" type="button" class="btn ghost" data-i18n="connectButton"></button>
+        </div>
+      </details>
 
       <section class="group">
         <h2 data-i18n="settingsTitle"></h2>
+        <p id="ruleHint" class="hint"></p>
         <label class="field">
           <span data-i18n="displayNameLabel"></span>
           <input id="displayName" type="text" maxlength="40" />
         </label>
-        <label class="field">
+        <label id="popupField" class="field">
           <span data-i18n="popupMessageLabel"></span>
           <input id="popupMessage" type="text" data-i18n-placeholder="defaultPopupMessage" />
         </label>

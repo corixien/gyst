@@ -30,9 +30,11 @@ The schema is created on startup (`schema.sql`, idempotent).
 | GET | `/api/state` | token | settings, free windows, grant times, partner count |
 | PUT | `/api/settings` | token | Save button: whole draft at once; with a partner needs a time grant or a settings grant (used up by the save) |
 | POST | `/api/sites` | token | add a blocked site, always free |
-| POST | `/api/enabled` | token | turn block on (free) or off (needs a running time grant with a partner) |
-| GET | `/api/partners` | token | partner names |
-| POST | `/api/invites` | token | one-time partner invite (7 days) |
+| POST | `/api/enabled` | token | turn block on (free, ends a running grant) or off (needs a running time grant with a partner) |
+| GET | `/api/partners` | token | partners with id, name, since |
+| POST | `/api/partners/remove` | token | owner removes a partner; needs a running time grant |
+| POST | `/api/partners/leave` | partner signature | partner ends its own role for the account (always free) |
+| POST | `/api/invites` | token | one-time partner invite (24 hours) |
 | POST | `/api/partners/register` | invite | register a partner public key |
 | POST | `/api/grant` | partner signature | apply a grant (tiers 30m, 1h, day, settings, end). Response has the new times for feedback |
 | GET | `/partner` | none | partner page |

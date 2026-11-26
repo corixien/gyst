@@ -13,7 +13,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey 
 from fastapi.testclient import TestClient  # noqa: E402
 
 import app as server  # noqa: E402
-from gating import grant_message  # noqa: E402
+from gating import grant_message, leave_message  # noqa: E402
 
 BASE_SETTINGS = {
     'enabled': True, 'sites': ['youtube.com'], 'popupMessage': '', 'blockMessage': '',
@@ -166,6 +166,64 @@ class ApiTest(unittest.TestCase):
                         json={**BASE_SETTINGS, 'sites': ['other.com']})
         state = self.client.get('/api/state', headers=self.auth).json()
         self.assertEqual(state['settings']['sites'], ['youtube.com'])
+
+    def leave_body(self, key, stamp=None, account_id=None):
+        stamp = stamp or int(time.time())
+        account_id = account_id or self.account['account_id']
+        sig = base64.b64encode(key.sign(leave_message(account_id, stamp))).decode()
+        return {'account_id': account_id, 'pubkey': key.public_key().public_bytes_raw().hex(), 'stamp': stamp, 'signature': sig}
+
+    def test_enable_ends_running_grant(self):
+        key, _ = self.partner()
+        self.assertEqual(self.grant(key, 1).status_code, 200)
+        self.assertEqual(self.client.post('/api/enabled', headers=self.auth, json={'enabled': True}).status_code, 200)
+        self.assertEqual(self.client.get('/api/state', headers=self.auth).json()['grant_until'], 0)
+        self.assertEqual(self.client.post('/api/enabled', headers=self.auth, json={'enabled': False}).status_code, 403)
+
+    def test_settings_grant_cannot_switch_block_off(self):
+        key, _ = self.partner()
+        self.assertEqual(self.grant(key, 3).status_code, 200)
+        r = self.client.put('/api/settings', headers=self.auth, json={**BASE_SETTINGS, 'enabled': False})
+        self.assertEqual(r.status_code, 403)
+
+    def test_owner_remove_partner_needs_grant(self):
+        key, _ = self.partner('Anna')
+        partner_id = self.client.get('/api/partners', headers=self.auth).json()['partners'][0]['id']
+        self.assertEqual(self.client.post('/api/partners/remove', headers=self.auth, json={'partner_id': partner_id}).status_code, 403)
+        self.assertEqual(self.grant(key, 1).status_code, 200)
+        self.assertEqual(self.client.post('/api/partners/remove', headers=self.auth, json={'partner_id': partner_id}).status_code, 200)
+        self.assertEqual(self.client.get('/api/state', headers=self.auth).json()['partners'], 0)
+
+    def test_owner_remove_rejects_bad_or_unknown_id(self):
+        key, _ = self.partner()
+        self.assertEqual(self.grant(key, 1).status_code, 200)
+        self.assertEqual(self.client.post('/api/partners/remove', headers=self.auth, json={'partner_id': 'nope'}).status_code, 422)
+        self.assertEqual(self.client.post('/api/partners/remove', headers=self.auth,
+                                          json={'partner_id': str(uuid.uuid4())}).status_code, 404)
+
+    def test_partner_leave_is_free_and_final(self):
+        key, _ = self.partner()
+        r = self.client.post('/api/partners/leave', json=self.leave_body(key))
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(self.client.get('/api/state', headers=self.auth).json()['partners'], 0)
+        self.assertIn(self.client.post('/api/partners/leave', json=self.leave_body(key)).status_code, (403, 409))
+        self.assertEqual(self.grant(key, 0).status_code, 403)
+
+    def test_leave_needs_valid_signature_and_fresh_stamp(self):
+        key, _ = self.partner()
+        body = self.leave_body(key)
+        body['signature'] = base64.b64encode(key.sign(b'other')).decode()
+        self.assertEqual(self.client.post('/api/partners/leave', json=body).status_code, 403)
+        old = self.leave_body(key, stamp=int(time.time()) - 3600)
+        self.assertEqual(self.client.post('/api/partners/leave', json=old).status_code, 403)
+        self.assertEqual(self.client.get('/api/state', headers=self.auth).json()['partners'], 1)
+
+    def test_leave_replay_rejected_for_other_partner_stamp(self):
+        key, _ = self.partner('a')
+        other, _ = self.partner('b')
+        stamp = int(time.time())
+        self.assertEqual(self.grant(key, 0, stamp=stamp).status_code, 200)
+        self.assertEqual(self.client.post('/api/partners/leave', json=self.leave_body(other, stamp=stamp)).status_code, 409)
 
     def test_invalid_free_window_rejected(self):
         r = self.client.put('/api/settings', headers=self.auth,
