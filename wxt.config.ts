@@ -5,7 +5,7 @@ export default defineConfig({
   manifest: {
     name: 'GYST',
     description: 'Get Your Shit Together: block distracting sites until you really mean it.',
-    permissions: ['storage', 'webNavigation', 'tabs', 'nativeMessaging'],
+    permissions: ['storage', 'webNavigation', 'tabs', 'nativeMessaging', 'alarms'],
     host_permissions: ['<all_urls>'],
     action: {
       default_icon: { 16: 'icon/16.png', 32: 'icon/32.png', 48: 'icon/48.png' },

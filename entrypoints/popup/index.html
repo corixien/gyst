@@ -14,6 +14,9 @@
       </header>
 
       <button id="toggle" class="big" type="button" aria-pressed="false"></button>
+      <div id="grant" class="status" hidden><span id="grantText"></span></div>
+      <p id="syncState" class="error" hidden data-i18n="syncOffline"></p>
+      <p id="grantNeeded" class="error" hidden data-i18n="grantRequired"></p>
 
       <section class="group">
         <h2 data-i18n="sitesTitle"></h2>
@@ -29,24 +32,57 @@
       <section class="group">
         <h2 data-i18n="freeTitle"></h2>
         <p class="hint" data-i18n="freeHint"></p>
-        <form id="freeForm" class="row-form">
-          <label class="field">
-            <span data-i18n="freeDay"></span>
-            <select id="freeDay"></select>
-          </label>
-          <label class="field">
-            <span data-i18n="freeFrom"></span>
-            <input id="freeFrom" type="time" required />
-          </label>
-          <label class="field">
-            <span data-i18n="freeTo"></span>
-            <input id="freeTo" type="time" required />
-          </label>
-          <button type="submit" class="btn" data-i18n="add"></button>
+        <form id="freeForm">
+          <fieldset class="field days">
+            <legend data-i18n="freeDay"></legend>
+            <div id="freeDays" class="day-row"></div>
+          </fieldset>
+          <div class="row-form">
+            <label class="field"><span data-i18n="freeFrom"></span><input id="freeFrom" type="time" required /></label>
+            <label class="field"><span data-i18n="freeTo"></span><input id="freeTo" type="time" required /></label>
+            <button type="submit" class="btn" data-i18n="add"></button>
+          </div>
         </form>
-        <p id="freeError" class="error" hidden data-i18n="freeInvalid"></p>
-        <p id="freeOffline" class="error" hidden data-i18n="companionOffline"></p>
+        <p id="freeError" class="error" hidden></p>
         <ul id="free" class="sites"></ul>
+      </section>
+
+      <section class="group">
+        <h2 data-i18n="inviteTitle"></h2>
+        <p id="partners" class="hint"></p>
+        <div class="row-form">
+          <button id="invite" type="button" class="btn" data-i18n="inviteButton"></button>
+        </div>
+        <p id="inviteHint" class="hint" hidden data-i18n="inviteHint"></p>
+        <code id="inviteCode" class="code" hidden></code>
+      </section>
+
+      <section class="group">
+        <h2 data-i18n="accountTitle"></h2>
+        <p id="accountStatus" class="hint" data-i18n="notSignedIn"></p>
+        <div id="accountForm">
+          <label class="field">
+            <span data-i18n="serverLabel"></span>
+            <input id="serverUrl" type="url" autocomplete="off" spellcheck="false" />
+          </label>
+          <div class="row-form">
+            <button id="createAccount" type="button" class="btn" data-i18n="createAccount"></button>
+          </div>
+          <label class="field">
+            <span data-i18n="connectToken"></span>
+            <input id="connectToken" type="text" autocomplete="off" spellcheck="false" />
+          </label>
+          <div class="row-form">
+            <button id="connect" type="button" class="btn ghost" data-i18n="connectButton"></button>
+          </div>
+        </div>
+        <div id="tokenBox" hidden>
+          <p class="hint" data-i18n="tokenShown"></p>
+          <code id="tokenValue" class="code"></code>
+          <div class="row-form">
+            <button id="tokenSaved" type="button" class="btn" data-i18n="tokenSaved"></button>
+          </div>
+        </div>
       </section>
 
       <section class="group">
@@ -58,13 +94,6 @@
         <label class="field">
           <span data-i18n="blockMessageLabel"></span>
           <input id="blockMessage" type="text" data-i18n-placeholder="defaultBlockMessage" />
-        </label>
-        <label class="field">
-          <span data-i18n="unlockLabel"></span>
-          <select id="unlock">
-            <option value="text" data-i18n="unlockText"></option>
-            <option value="partner" data-i18n="unlockPartner"></option>
-          </select>
         </label>
         <label class="field">
           <span data-i18n="language"></span>
@@ -89,7 +118,7 @@
         <p id="confirmHint" class="hint" data-i18n="confirmHint"></p>
         <p id="confirmRequired" class="required"></p>
         <input id="confirmInput" type="text" autocomplete="off" spellcheck="false" />
-        <p id="confirmError" class="error" hidden data-i18n="codeInvalid"></p>
+        <p id="confirmError" class="error" hidden></p>
         <p id="confirmWait" class="hint"></p>
         <div class="row-form">
           <button id="confirmCancel" type="button" class="btn ghost" data-i18n="cancel"></button>

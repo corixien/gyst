@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GYST Partner</title>
+    <style>
+      body { font-family: system-ui, sans-serif; background: #0b0d12; color: #f2f4f8; margin: 0; }
+      main { max-width: 560px; margin: 32px auto; padding: 0 20px; }
+      h1 { font-size: 22px; }
+      h2 { font-size: 15px; color: #8b93a7; font-weight: 600; margin-top: 28px; }
+      input { width: 100%; box-sizing: border-box; background: #141821; color: #f2f4f8; border: 1px solid #262c3a; border-radius: 8px; padding: 10px; font-size: 15px; }
+      button { background: #3b82f6; color: #fff; border: 0; border-radius: 8px; padding: 10px 14px; font-size: 15px; margin: 4px 4px 4px 0; cursor: pointer; }
+      button.ghost { background: #262c3a; }
+      .card { background: #141821; border-radius: 10px; padding: 14px; margin-top: 10px; }
+      #info, .muted { color: #8b93a7; font-size: 14px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>GYST Partner</h1>
+
+      <h2>Neuen Nutzer hinzufügen</h2>
+      <p class="muted">Den Einladungscode bekommst du vom Nutzer (im Add-on unter "Partner einladen").</p>
+      <input id="invite" type="text" autocomplete="off" spellcheck="false" placeholder="Einladungscode" />
+      <p><button id="register">Als Partner hinzufügen</button></p>
+
+      <h2>Deine Nutzer</h2>
+      <div id="accounts"></div>
+
+      <p id="info"></p>
+    </main>
+
+    <script>
+      const API = location.origin;
+      const DOMAIN = new TextEncoder().encode('gyst-grant-v2');
+      const TIERS = [
+        { id: 0, label: '30 Minuten freigeben' },
+        { id: 1, label: '1 Stunde freigeben' },
+        { id: 2, label: 'Ganzer Tag freigeben' },
+        { id: 3, label: 'Einstellungen freigeben' },
+      ];
+      const infoEl = document.getElementById('info');
+      const accountsEl = document.getElementById('accounts');
+
+      // Everything stored on this device: one Ed25519 key pair per main user.
+      const load = () => JSON.parse(localStorage.getItem('gyst-partner') ?? '[]');
+      const save = (list) => localStorage.setItem('gyst-partner', JSON.stringify(list));
+      const toHex = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+      const toB64 = (bytes) => btoa(String.fromCharCode(...bytes));
+      const fromB64 = (text) => Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
+      const uuidBytes = (uuid) => Uint8Array.from(uuid.replace(/-/g, '').match(/../g).map((b) => parseInt(b, 16)));
+
+      async function newPair() {
+        const pair = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']);
+        return {
+          priv: toB64(new Uint8Array(await crypto.subtle.exportKey('pkcs8', pair.privateKey))),
+          pub: toHex(new Uint8Array(await crypto.subtle.exportKey('raw', pair.publicKey))),
+        };
+      }
+
+      document.getElementById('register').addEventListener('click', async () => {
+        const invite = document.getElementById('invite').value.trim();
+        const [accountId] = invite.split('.');
+        if (!accountId || !invite.includes('.')) {
+          infoEl.textContent = 'Einladungscode sieht ungültig aus.';
+          return;
+        }
+        const pair = await newPair();
+        const response = await fetch(`${API}/api/partners/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ invite, pubkey: pair.pub, name: '' }),
+        });
+        if (!response.ok) {
+          infoEl.textContent = `Hinzufügen fehlgeschlagen: ${(await response.json()).detail ?? response.status}`;
+          return;
+        }
+        save([...load().filter((a) => a.account_id !== accountId), { account_id: accountId, ...pair }]);
+        document.getElementById('invite').value = '';
+        infoEl.textContent = 'Nutzer hinzugefügt.';
+        render();
+      });
+
+      async function signed(entry, tierId) {
+        const stamp = Math.max(Math.floor(Date.now() / 1000), (entry.last_stamp ?? 0) + 1);
+        const message = new Uint8Array([
+          ...DOMAIN, ...uuidBytes(entry.account_id), tierId,
+          (stamp >>> 24) & 255, (stamp >>> 16) & 255, (stamp >>> 8) & 255, stamp & 255,
+        ]);
+        const key = await crypto.subtle.importKey('pkcs8', fromB64(entry.priv), { name: 'Ed25519' }, false, ['sign']);
+        const signature = new Uint8Array(await crypto.subtle.sign({ name: 'Ed25519' }, key, message));
+        return { account_id: entry.account_id, pubkey: entry.pub, tier: tierId, stamp, signature: toB64(signature) };
+      }
+
+      async function grant(accountId, tierId) {
+        const list = load();
+        const entry = list.find((a) => a.account_id === accountId);
+        const body = await signed(entry, tierId);
+        const response = await fetch(`${API}/api/grant`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (response.ok) {
+          entry.last_stamp = body.stamp;
+          save(list);
+          infoEl.textContent = 'Freigabe gesendet. Im Add-on wirkt sie sofort.';
+        } else {
+          const detail = (await response.json().catch(() => ({}))).detail;
+          infoEl.textContent = `Nicht freigegeben (${response.status}): ${typeof detail === 'string' ? detail : JSON.stringify(detail ?? '')}`;
+        }
+      }
+
+      function render() {
+        accountsEl.replaceChildren();
+        for (const entry of load()) {
+          const card = document.createElement('div');
+          card.className = 'card';
+          const title = document.createElement('div');
+          title.textContent = `Nutzer ${entry.account_id.slice(0, 8)}`;
+          card.append(title);
+          for (const tier of TIERS) {
+            const btn = document.createElement('button');
+            btn.textContent = tier.label;
+            btn.addEventListener('click', () => grant(entry.account_id, tier.id));
+            card.append(btn);
+          }
+          accountsEl.append(card);
+        }
+        if (load().length === 0) accountsEl.textContent = 'Noch keine Nutzer.';
+      }
+
+      render();
+    </script>
+  </body>
+</html>

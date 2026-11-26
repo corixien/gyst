@@ -1,47 +1,39 @@
-# GYST companion (Linux)
+# GYST companion (Fedora / Linux)
 
-Full-screen lock with a system-wide keyboard and mouse grab. The Firefox addon asks it on every blocked navigation.
+Lock screen for Firefox desktop. Free time comes from the GYST sync server. Runs as a user service, no sudo.
 
-## Install
+## Setup
+1. Server running (see `server/README.md`). Create an account in the add-on popup (Konto erstellen) and keep the token.
+2. Config `~/.config/gyst-companion/config.json` (created on first start, then edit):
 
-No sudo needed when your user is in group `input` (check: `id -nG | grep -w input`).
+```json
+{
+  "server": "https://<your-service>.onrender.com",
+  "token": "<account token>",
+  "lock_seconds": 10,
+  "max_lock_seconds": 120,
+  "message": "Get your shit together. Diese Seite ist gesperrt."
+}
+```
+
+3. Input access for the evdev grab: `sudo usermod -aG input $USER`, then log out and in.
+4. Service:
 
 ```bash
-mkdir -p ~/.config/gyst-companion ~/.config/systemd/user ~/.mozilla/native-messaging-hosts
-chmod +x ~/gyst/companion/gyst_native_host.py
-sed "s#__HOST__#$HOME/gyst/companion/gyst_native_host.py#" ~/gyst/companion/native/gyst_companion.json > ~/.mozilla/native-messaging-hosts/gyst_companion.json
-cp ~/gyst/companion/gyst-companion.service ~/.config/systemd/user/
+mkdir -p ~/.config/systemd/user
+cp companion/gyst-companion.service ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now gyst-companion.service
 ```
 
-The first start creates `~/.config/gyst-companion/config.json`.
+5. Firefox native host: `companion/native/gyst_companion.json` goes to `~/.mozilla/native-messaging-hosts/` with `path` set to `companion/gyst_native_host.py`.
 
-## Config
-
-`~/.config/gyst-companion/config.json`:
-
-- `lock_seconds`: countdown on the lock screen (default 10).
-- `max_lock_seconds`: hard cap, the lock always ends after this (default 120).
-- `message`: text on the lock screen.
-- `free_windows`: daily unlocked windows, e.g. `[{"from": "20:00", "to": "22:00"}]`.
-- `partner_secrets`: one hex key per partner, see below.
-
-## Partner codes
-
-Partner grants 30 min, 1 h or a full day. Codes are HMAC of tier and 5-minute window, so no server is needed.
-
-1. Partner generates a key: `python3 -c "import secrets; print(secrets.token_hex(32))"`
-2. Key goes into `partner_secrets` in the config (daemon side) and into the partner page on the partner's device.
-3. Partner opens `companion/partner/index.html` (e.g. on the phone), enters the key once, taps a tier, reads out the 8-digit code.
-4. User types the code on the lock screen and presses Enter.
-
-Limitation: the key sits in a file the user can read. A real barrier needs an asymmetric key (signature on the partner device, public key only on the machine). Planned as next step.
-
-## Test first
-
-Set `lock_seconds` to 3 and `max_lock_seconds` to 15 before the first real lock. Run `systemctl --user status gyst-companion` and `journalctl --user -u gyst-companion -f` during the test.
+## Behaviour
+- Polls the server every 10 s and keeps the last state in `~/.local/state/gyst-companion/state.json`.
+- No server or no state yet: nothing is free, so the lock always shows.
+- A grant arriving during a lock ends it at once.
 
 ## Tests
-
-`python3 -m unittest -q test_companion` (from this folder).
+```bash
+cd companion && python3 -m unittest test_companion
+```

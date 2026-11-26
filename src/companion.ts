@@ -12,7 +12,7 @@ export interface FreeWindow {
 export interface CompanionReply {
   free?: boolean;
   ok?: boolean;
-  config?: { free_windows: FreeWindow[] };
+  config?: { free_windows: FreeWindow[]; grant_until: number; settings_until: number }; // unix seconds, 0 = none
 }
 
 // Resolves null when the companion is missing, not running or answers with an error.

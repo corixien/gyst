@@ -1,0 +1,15 @@
+# Render Blueprint: one web service. Database is Neon Postgres (created by hand, connection string set below).
+services:
+  - type: web
+    name: gyst-sync
+    runtime: python
+    plan: free            # free plans sleep when idle; first request after sleep takes a while
+    rootDir: server
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    envVars:
+      - key: DATABASE_URL
+        sync: false       # secret: Neon connection string, must include sslmode=require
+      - key: PYTHON_VERSION
+        value: "3.12"

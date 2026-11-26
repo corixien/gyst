@@ -9,7 +9,8 @@ Browser extension (WXT, TypeScript, MV3) for Firefox and Chromium. Blocks distra
 
 ## Layout
 - `entrypoints/background.ts`: `webNavigation` redirect to the block page (`tabs.update`). Reloads open tabs when a site becomes blocked. Restores tabs to their original URL when unblocked.
-- `entrypoints/popup/`: toggle, site list, 10 s confirm dialog, settings.
+- `entrypoints/popup/`: toggle, site list, free windows, account, partner invite, settings.
+- `src/api.ts`, `src/sync.ts`: server client and local cache of the server state. `src/rules.ts` mirrors the server gating.
 - `entrypoints/blocked/`: block page shown on redirect.
 - `src/`: pure logic (`blocklist`, `i18n`, `settings`) and storage item.
 
@@ -19,5 +20,7 @@ Browser extension (WXT, TypeScript, MV3) for Firefox and Chromium. Blocks distra
 - Do not use DNR redirect to extension pages: Firefox fails with NS_ERROR_DOM_BAD_URI.
 - `session:blockedTabs` maps tab id to the original URL. Entries leave on tab close or when the URL is unblocked.
 - Turning off or removing a site always goes through the confirm dialog (typed sentence + 10 s).
-- No network calls, no analytics, no accounts.
+- Data lives on the sync server (Render + Neon). No analytics. The add-on only talks to the configured server.
+- Loosening changes (remove site, disable, messages, language, unlock, new free window) need a partner grant when the account has a partner. The server enforces this; the add-on only mirrors it.
+- Firefox desktop with the Linux companion: the companion draws the lock screen. Chrome and Android: block redirect only.
 - Git: all work on `main`, push directly.

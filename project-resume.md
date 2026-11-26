@@ -1,7 +1,13 @@
 # GYST: project resume
 
 ## What
-Firefox + Chromium extension "GYST" (Get Your Shit Together). Big master switch, site list (domain + subdomains + all paths), 10 s typed-confirm on turn-off/remove, custom block page message. EN/DE.
+Firefox + Chromium (+ Firefox Android, not tested yet) extension "GYST" (Get Your Shit Together). Blocks sites, free windows per weekday, partner grants (30 min / 1 h / day / settings), sync via server. Linux companion draws the lock screen on Firefox desktop. EN/DE.
+
+## Architecture (0.2.0)
+- `server/`: FastAPI + Postgres (Neon). Accounts, settings, free windows, partners (Ed25519 public keys), grants. Deploy on Render (`server/render.yaml`, `server/README.md`).
+- Extension: talks only to the server. Local cache in `local:remote`. Every change goes through `change()` in the popup; the server checks it again.
+- `companion/`: polls the server (`config.json`: `server`, `token`), keeps last state in `~/.local/state/gyst-companion/`.
+- Plan and decisions: `docs/PLAN-sync.md`.
 
 ## Stack
 WXT 0.21 + TypeScript + Vitest, MV3. Vanilla TS + CSS. `storage.local`, DNR dynamic rules. Same stack as `yt-hard-mode`.
@@ -15,17 +21,16 @@ WXT 0.21 + TypeScript + Vitest, MV3. Vanilla TS + CSS. `storage.local`, DNR dyna
 ## Commands
 `npm run check`, `npm test`, `npm run dev:firefox`.
 
-## Current state
-- MVP (milestones 1-5 in code): toggle, site list, confirm, block page, i18n, settings. Typecheck, 6 unit tests, Firefox + Chrome builds pass.
-- NOT verified in a real browser yet: DNR redirect behavior, popup flow.
-- Repo `corixien/gyst` (public, MIT), first commit pushed to `main`.
+## Current state (0.2.0)
+- Server v1: 15 API tests against local Postgres (podman container, port 55432, test only). Partner page served at `/partner`.
+- Add-on: account, invite, sync, gated changes, blocking, block-page release. Verified in headless Chrome (popup, partner grant, gated removal refused, block and release).
+- NOT done: Firefox desktop run with companion, Firefox Android test, Render deploy, Neon DB (user creates both), companion lock on real hardware.
+- Dev DB container: `podman run -d --name gyst-pg-test -e POSTGRES_PASSWORD=test -e POSTGRES_DB=gyst -p 55432:5432 docker.io/library/postgres:16-alpine`
 
 ## Companion (Linux, `companion/`)
-- `gyst_companion.py`: systemd user daemon. Unix socket in `$XDG_RUNTIME_DIR`. On `blocked`: full-screen tk lock + evdev grab (`EVIOCGRAB`, user in group `input`, no sudo). On `check`/`blocked`: replies `free` (daily windows or partner grant).
-- `gyst_native_host.py`: native messaging bridge (Firefox, `gyst_companion` host name). Addon calls it in `background.ts`; without companion nothing is free.
-- `partner/index.html`: offline code generator (HMAC, 30m/1h/day). Known limitation: key readable by user in config. Planned: asymmetric key.
-- Not built yet: settings UI for partners, Chrome native host (needs extension ID), Android.
-- Lock not tested on real hardware. Test with `lock_seconds` 3, `max_lock_seconds` 15.
+- `gyst_companion.py`: systemd user daemon. Polls the server every 10 s (`config.json`: `server`, `token`). Free = grant running or in a free window. Lock screen (tk ring + GYST wordmark, evdev grab, no sudo) on `blocked` from Firefox.
+- `gyst_native_host.py`: native messaging bridge for Firefox (`gyst_companion`).
+- Fail closed: no server config or no state = nothing free.
 
 ## Open
 - Manual test in Firefox and Chrome.

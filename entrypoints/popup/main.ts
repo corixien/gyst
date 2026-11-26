@@ -1,10 +1,13 @@
 import { browser } from 'wxt/browser';
-import { askCompanion, type FreeWindow } from '../../src/companion';
+import { ApiError, DEFAULT_SERVER, createAccount, createInvite, putSettings } from '../../src/api';
 import { normalizeDomain } from '../../src/blocklist';
 import { matchesSentence } from '../../src/confirm';
 import { defaultPopupMessage, resolveLocale, t, type Locale, type MessageKey } from '../../src/i18n';
-import { normalizeSettings, type Settings, type UnlockMode } from '../../src/settings';
+import { gatedChanges } from '../../src/rules';
+import type { FreeWindow } from '../../src/schedule';
+import { normalizeSettings, type Settings } from '../../src/settings';
 import { readSettings, settingsItem } from '../../src/storage';
+import { accountItem, remoteItem, syncNow } from '../../src/sync';
 
 const CONFIRM_SECONDS = 10;
 
@@ -13,6 +16,10 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 let settings: Settings;
 let locale: Locale;
 let freeWindows: FreeWindow[] = [];
+let grantUntil = 0;
+let settingsUntil = 0;
+let partners = 0;
+let signedIn = false;
 
 const toggle = $<HTMLButtonElement>('toggle');
 const siteInput = $<HTMLInputElement>('siteInput');
@@ -21,7 +28,6 @@ const sitesList = $<HTMLUListElement>('sites');
 const popupMessageInput = $<HTMLInputElement>('popupMessage');
 const blockMessageInput = $<HTMLInputElement>('blockMessage');
 const languageSelect = $<HTMLSelectElement>('language');
-const unlockSelect = $<HTMLSelectElement>('unlock');
 const saved = $<HTMLElement>('saved');
 const dialog = $<HTMLDialogElement>('confirm');
 const confirmForm = $<HTMLFormElement>('confirmForm');
@@ -30,13 +36,22 @@ const confirmOk = $<HTMLButtonElement>('confirmOk');
 const confirmWait = $<HTMLParagraphElement>('confirmWait');
 const confirmError = $<HTMLParagraphElement>('confirmError');
 const freeList = $<HTMLUListElement>('free');
-const freeDay = $<HTMLSelectElement>('freeDay');
+const freeDaysBox = $<HTMLDivElement>('freeDays');
 const freeFrom = $<HTMLInputElement>('freeFrom');
 const freeTo = $<HTMLInputElement>('freeTo');
 const freeError = $<HTMLParagraphElement>('freeError');
-const freeOffline = $<HTMLParagraphElement>('freeOffline');
-
-const save = (patch: Partial<Settings>) => settingsItem.setValue({ ...settings, ...patch });
+const grantBox = $<HTMLDivElement>('grant');
+const grantText = $<HTMLSpanElement>('grantText');
+const grantNeeded = $<HTMLParagraphElement>('grantNeeded');
+const syncState = $<HTMLParagraphElement>('syncState');
+const partnersText = $<HTMLParagraphElement>('partners');
+const inviteButton = $<HTMLButtonElement>('invite');
+const inviteCode = $<HTMLElement>('inviteCode');
+const accountStatus = $<HTMLParagraphElement>('accountStatus');
+const accountForm = $<HTMLDivElement>('accountForm');
+const serverUrl = $<HTMLInputElement>('serverUrl');
+const tokenBox = $<HTMLDivElement>('tokenBox');
+const tokenValue = $<HTMLElement>('tokenValue');
 
 function applyLocale() {
   locale = resolveLocale(settings.language, browser.i18n.getUILanguage());
@@ -49,11 +64,35 @@ function applyLocale() {
   });
 }
 
-function render() {
-  toggle.textContent = t(settings.enabled ? 'on' : 'off', locale);
-  toggle.classList.toggle('on', settings.enabled);
-  toggle.setAttribute('aria-pressed', String(settings.enabled));
+const popupMessage = () => settings.popupMessage.trim() || defaultPopupMessage(locale);
+const nowSeconds = () => Date.now() / 1000;
 
+function formatLeft(seconds: number): string {
+  const units: [number, MessageKey, MessageKey][] = [
+    [3600, 'unitHour', 'unitHours'],
+    [60, 'unitMinute', 'unitMinutes'],
+    [1, 'unitSecond', 'unitSeconds'],
+  ];
+  let rest = seconds;
+  const parts: string[] = [];
+  for (const [size, one, many] of units) {
+    const n = Math.floor(rest / size);
+    rest -= n * size;
+    if (n > 0) parts.push(`${n} ${t(n === 1 ? one : many, locale)}`);
+  }
+  return parts.join(' ');
+}
+
+function renderGrant() {
+  const now = nowSeconds();
+  const parts: string[] = [];
+  if (grantUntil > now) parts.push(t('grantLeft', locale, { time: formatLeft(Math.ceil(grantUntil - now)) }));
+  if (settingsUntil > now) parts.push(t('settingsLeft', locale, { time: formatLeft(Math.ceil(settingsUntil - now)) }));
+  grantBox.hidden = parts.length === 0;
+  grantText.textContent = parts.join(' · ');
+}
+
+function renderSites() {
   sitesList.replaceChildren(
     ...settings.sites.map((site) => {
       const item = document.createElement('li');
@@ -63,7 +102,7 @@ function render() {
       remove.type = 'button';
       remove.className = 'btn ghost small';
       remove.textContent = t('remove', locale);
-      remove.onclick = () => askConfirm(t('confirmRemoveTitle', locale), popupMessage(), () => save({ sites: settings.sites.filter((s) => s !== site) }));
+      remove.onclick = () => change({ ...settings, sites: settings.sites.filter((s) => s !== site) }, freeWindows, t('confirmRemoveTitle', locale));
       item.append(name, remove);
       return item;
     }),
@@ -93,7 +132,7 @@ function renderFree() {
       remove.type = 'button';
       remove.className = 'btn ghost small';
       remove.textContent = t('remove', locale);
-      remove.onclick = () => saveFree(freeWindows.filter((_, i) => i !== index));
+      remove.onclick = () => change(settings, freeWindows.filter((_, i) => i !== index), null);
       item.append(range, remove);
       return item;
     }),
@@ -106,45 +145,52 @@ function renderFree() {
   }
 }
 
-// The companion stores the windows, so they are read from and written to it.
-async function loadFree() {
-  const reply = await askCompanion({ type: 'getConfig' });
-  freeOffline.hidden = reply !== null;
-  freeWindows = reply?.config?.free_windows ?? [];
-  renderFree();
+function renderToggle() {
+  toggle.textContent = t(settings.enabled ? 'on' : 'off', locale);
+  toggle.classList.toggle('on', settings.enabled);
+  toggle.setAttribute('aria-pressed', String(settings.enabled));
 }
 
-async function saveFree(windows: FreeWindow[]): Promise<boolean> {
-  const reply = await askCompanion({ type: 'setFreeWindows', windows });
-  freeOffline.hidden = reply !== null;
-  if (!reply?.ok) return false;
-  freeWindows = windows;
-  renderFree();
-  return true;
+function renderAccount() {
+  accountStatus.hidden = false;
+  accountForm.hidden = signedIn;
+  accountStatus.textContent = signedIn ? `${t('partnersCount', locale, { count: partners })}` : t('notSignedIn', locale);
+  partnersText.textContent = signedIn ? t('partnersCount', locale, { count: partners }) : '';
+  inviteButton.disabled = !signedIn;
 }
 
-const popupMessage = () => settings.popupMessage.trim() || defaultPopupMessage(locale);
+// Reads the local copies that sync keeps up to date.
+async function refresh() {
+  const remote = await remoteItem.getValue();
+  freeWindows = (remote.free_windows ?? []) as FreeWindow[];
+  grantUntil = remote.grant_until ?? 0;
+  settingsUntil = remote.settings_until ?? 0;
+  partners = remote.partners ?? 0;
+  signedIn = (await accountItem.getValue()) !== null;
+  syncState.hidden = !signedIn || remote.synced !== false;
+  settings = normalizeSettings(await settingsItem.getValue());
+  renderToggle();
+  renderSites();
+  renderFree();
+  renderGrant();
+  renderAccount();
+}
 
-// Turning off, removing a site, adding a free window or changing the unlock mode needs a 10 s wait
-// and either the typed sentence or a partner code. Adding a site and enabling do not.
-function askConfirm(title: string, required: string, onConfirm: () => Promise<unknown>) {
-  const partner = settings.unlock === 'partner';
+// Confirmation with typed sentence and 10 s wait. Only used when no partner exists for the account.
+function askSentence(title: string, onConfirm: () => Promise<boolean>) {
   let remaining = CONFIRM_SECONDS;
-  const accepts = () => (partner ? /^\d{8}$/.test(confirmInput.value) : matchesSentence(confirmInput.value, required));
+  const required = popupMessage();
+  const accepts = () => matchesSentence(confirmInput.value, required);
 
   $('confirmTitle').textContent = title;
-  $('confirmHint').textContent = t(partner ? 'partnerCodeHint' : 'confirmHint', locale);
-  $('confirmRequired').textContent = partner ? '' : required;
-  $('confirmRequired').hidden = partner;
+  $('confirmRequired').textContent = required;
   confirmInput.value = '';
-  confirmInput.inputMode = partner ? 'numeric' : 'text';
   confirmError.hidden = true;
 
   const updateState = () => {
     confirmOk.disabled = !(remaining === 0 && accepts());
     confirmWait.textContent = remaining > 0 ? t('confirmWait', locale, { seconds: remaining }) : '';
   };
-
   const timer = setInterval(() => {
     remaining = Math.max(0, remaining - 1);
     updateState();
@@ -153,19 +199,13 @@ function askConfirm(title: string, required: string, onConfirm: () => Promise<un
 
   const submit = async () => {
     if (confirmOk.disabled) return;
-    if (partner && !(await askCompanion({ type: 'verifyCode', code: confirmInput.value }))?.ok) {
-      confirmError.hidden = false;
-      return;
-    }
     dialog.close();
     await onConfirm();
   };
-
   confirmInput.oninput = () => {
     confirmError.hidden = true;
     updateState();
   };
-  // Enter confirms when allowed; it used to close the dialog and drop the typed text.
   confirmForm.onsubmit = (event) => {
     event.preventDefault();
     void submit();
@@ -179,69 +219,147 @@ function askConfirm(title: string, required: string, onConfirm: () => Promise<un
   confirmInput.focus();
 }
 
+// Every change goes through here. Loosening changes need a partner grant when a partner exists,
+// otherwise the typed sentence. The server enforces the same rules.
+// Changes run one after another: each starts from the state the previous one wrote.
+let queued: Promise<void> = Promise.resolve();
+function change(next: Settings, nextWindows: FreeWindow[], title: string | null): Promise<void> {
+  queued = queued.then(() => applyChange(next, nextWindows, title));
+  return queued;
+}
+
+async function applyChange(next: Settings, nextWindows: FreeWindow[], title: string | null): Promise<void> {
+  const gated = gatedChanges(settings, next, freeWindows, nextWindows);
+  const hasGrant = grantUntil > nowSeconds() || settingsUntil > nowSeconds();
+  if (gated.length > 0 && partners > 0 && !hasGrant) {
+    grantNeeded.hidden = false;
+    return;
+  }
+  const apply = async () => {
+    grantNeeded.hidden = true;
+    const account = await accountItem.getValue();
+    if (account) {
+      try {
+        await putSettings(account.server, account.token, next, nextWindows);
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 403) {
+          grantNeeded.hidden = false;
+          return;
+        }
+        syncState.hidden = false;
+        return;
+      }
+      settings = next;
+      freeWindows = nextWindows;
+      await syncNow();
+    } else {
+      await settingsItem.setValue(next);
+      await remoteItem.setValue({ ...(await remoteItem.getValue()), free_windows: nextWindows });
+    }
+    await refresh();
+    saved.hidden = false;
+    setTimeout(() => (saved.hidden = true), 1500);
+  };
+  if (gated.length > 0 && partners === 0 && !hasGrant && title) {
+    askSentence(title, async () => {
+      await apply();
+      return true;
+    });
+    return;
+  }
+  await apply();
+}
+
 toggle.onclick = () => {
   if (settings.enabled) {
-    askConfirm(t('confirmTitle', locale), popupMessage(), () => save({ enabled: false }));
+    void change({ ...settings, enabled: false }, freeWindows, t('confirmTitle', locale));
   } else {
-    save({ enabled: true });
+    void change({ ...settings, enabled: true }, freeWindows, null);
   }
 };
 
-function showSiteError(show: boolean) {
-  siteError.hidden = !show;
-}
-
-$<HTMLFormElement>('siteForm').onsubmit = async (event) => {
+$<HTMLFormElement>('siteForm').onsubmit = (event) => {
   event.preventDefault();
   const domain = normalizeDomain(siteInput.value);
-  showSiteError(domain === null);
+  siteError.hidden = domain !== null;
   if (domain === null) return;
   siteInput.value = '';
-  if (!settings.sites.includes(domain)) await save({ sites: [...settings.sites, domain] });
+  if (!settings.sites.includes(domain)) void change({ ...settings, sites: [...settings.sites, domain] }, freeWindows, null);
 };
 
 $<HTMLButtonElement>('addCurrent').onclick = async () => {
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
   const domain = normalizeDomain(tab?.url ?? '');
-  showSiteError(domain === null);
+  siteError.hidden = domain !== null;
   if (domain === null) return;
-  if (!settings.sites.includes(domain)) await save({ sites: [...settings.sites, domain] });
+  if (!settings.sites.includes(domain)) void change({ ...settings, sites: [...settings.sites, domain] }, freeWindows, null);
 };
 
 $<HTMLFormElement>('freeForm').onsubmit = (event) => {
   event.preventDefault();
-  const day = Number(freeDay.value);
+  const days = [...freeDaysBox.querySelectorAll<HTMLInputElement>('input:checked')].map((box) => Number(box.value));
   const from = freeFrom.value;
   const to = freeTo.value;
-  const valid = from !== '' && to !== '' && from !== to;
+  const valid = days.length > 0 && from !== '' && to !== '' && from !== to;
+  freeError.textContent = days.length === 0 ? t('freeNoDay', locale) : t('freeInvalid', locale);
   freeError.hidden = valid;
   if (!valid) return;
-  askConfirm(t('confirmFreeTitle', locale), popupMessage(), async () => {
-    if (await saveFree([...freeWindows, { day, from, to }])) {
-      freeFrom.value = '';
-      freeTo.value = '';
-    }
+  const windows = [...freeWindows, ...days.map((day) => ({ day, from, to }))];
+  void change(settings, windows, t('confirmFreeTitle', locale)).then(() => {
+    freeFrom.value = '';
+    freeTo.value = '';
+    freeDaysBox.querySelectorAll('input').forEach((box) => (box.checked = false));
   });
 };
 
-async function saveSettings() {
-  await save({
+$<HTMLButtonElement>('save').onclick = () => {
+  const next: Settings = {
+    ...settings,
     popupMessage: popupMessageInput.value.trim(),
     blockMessage: blockMessageInput.value.trim(),
     language: languageSelect.value as Settings['language'],
-    unlock: unlockSelect.value as UnlockMode,
-  });
-  saved.hidden = false;
-  setTimeout(() => (saved.hidden = true), 1500);
-}
+  };
+  void change(next, freeWindows, t('confirmSettingsTitle', locale));
+};
 
-// Switching to the easier unlock mode must pass the current one, otherwise it is a bypass.
-$<HTMLButtonElement>('save').onclick = () => {
-  if (unlockSelect.value !== settings.unlock) {
-    askConfirm(t('confirmUnlockTitle', locale), popupMessage(), saveSettings);
-  } else {
-    void saveSettings();
+inviteButton.onclick = async () => {
+  const account = await accountItem.getValue();
+  if (!account) return;
+  try {
+    const { code } = await createInvite(account.server, account.token);
+    inviteCode.textContent = code;
+    inviteCode.hidden = false;
+    inviteCode.onclick = () => void navigator.clipboard?.writeText(code);
+  } catch {
+    syncState.hidden = false;
   }
+};
+
+$<HTMLButtonElement>('createAccount').onclick = async () => {
+  const server = serverUrl.value.trim() || DEFAULT_SERVER;
+  try {
+    const created = await createAccount(server);
+    await accountItem.setValue({ server, token: created.token, accountId: created.account_id });
+    tokenValue.textContent = created.token;
+    tokenBox.hidden = false;
+  } catch {
+    syncState.hidden = false;
+  }
+};
+
+$<HTMLButtonElement>('connect').onclick = async () => {
+  const token = $<HTMLInputElement>('connectToken').value.trim();
+  if (!token) return;
+  const server = serverUrl.value.trim() || DEFAULT_SERVER;
+  await accountItem.setValue({ server, token, accountId: '' });
+  await syncNow();
+  await refresh();
+};
+
+$<HTMLButtonElement>('tokenSaved').onclick = async () => {
+  tokenBox.hidden = true;
+  tokenValue.textContent = '';
+  await refresh();
 };
 
 async function init() {
@@ -249,20 +367,24 @@ async function init() {
   popupMessageInput.value = settings.popupMessage;
   blockMessageInput.value = settings.blockMessage;
   languageSelect.value = settings.language;
-  unlockSelect.value = settings.unlock;
+  serverUrl.value = (await accountItem.getValue())?.server ?? DEFAULT_SERVER;
   applyLocale();
-  render();
-  freeDay.replaceChildren(
-    ...[0, 1, 2, 3, 4, 5, 6].map((day) => new Option(weekdayName(day), String(day))),
+  freeDaysBox.replaceChildren(
+    ...[0, 1, 2, 3, 4, 5, 6].map((day) => {
+      const label = document.createElement('label');
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      box.value = String(day);
+      label.append(box, weekdayName(day, 'short'));
+      return label;
+    }),
   );
-  void loadFree();
-
-  settingsItem.watch((value) => {
-    settings = normalizeSettings(value);
-    applyLocale();
-    render();
-    renderFree();
-  });
+  await syncNow();
+  await refresh();
+  setInterval(renderGrant, 1000);
+  setInterval(() => void syncNow().then(refresh), 10_000);
+  settingsItem.watch(() => void refresh());
+  remoteItem.watch(() => void refresh());
 }
 
 void init();

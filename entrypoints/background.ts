@@ -3,6 +3,7 @@ import { isBlockedUrl } from '../src/blocklist';
 import { askCompanion } from '../src/companion';
 import { DEFAULT_SETTINGS, type Settings } from '../src/settings';
 import { blockedTabsItem, readSettings, settingsItem } from '../src/storage';
+import { isFreeNow, syncNow } from '../src/sync';
 
 const BLOCK_PAGE = '/blocked.html';
 
@@ -27,8 +28,9 @@ export default defineBackground(() => {
       if (details.frameId !== 0) return;
       const settings = await readSettings();
       if (!isBlockedUrl(details.url, blockedDomains(settings))) return;
+      if (await isFreeNow()) return;
+      // Firefox desktop with the Linux companion: the companion starts the lock screen. Elsewhere it does not answer.
       const quiet = quietTabs.delete(details.tabId);
-      // The companion decides free windows and starts the lock. Without a companion nothing is free.
       const reply = await askCompanion({ type: quiet ? 'check' : 'blocked', host: new URL(details.url).hostname });
       if (reply?.free) return;
       await serial(async () => {
@@ -79,6 +81,13 @@ export default defineBackground(() => {
         }),
     );
   };
+
+  // Pull server state regularly; the popup and block page sync on their own too.
+  browser.alarms.create('gyst-sync', { periodInMinutes: 0.5 });
+  browser.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === 'gyst-sync') void syncNow();
+  });
+  void syncNow();
 
   settingsItem.watch(async (next, previous) => {
     const current = blockedDomains(next);
