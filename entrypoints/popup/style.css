@@ -322,3 +322,8 @@ dialog input {
   padding: 8px;
   margin: 6px 0;
 }
+
+.big.paused {
+  background: var(--track);
+  color: var(--muted);
+}

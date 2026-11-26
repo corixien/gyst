@@ -13,22 +13,31 @@
       button { background: #3b82f6; color: #fff; border: 0; border-radius: 8px; padding: 10px 14px; font-size: 15px; margin: 4px 4px 4px 0; cursor: pointer; }
       button.ghost { background: #262c3a; }
       .card { background: #141821; border-radius: 10px; padding: 14px; margin-top: 10px; }
-      #info, .muted { color: #8b93a7; font-size: 14px; }
+      .muted { color: #8b93a7; font-size: 14px; }
+      .status { border-radius: 10px; padding: 12px 14px; margin-top: 16px; font-size: 15px; }
+      .status.ok { background: #0f2a1d; color: #6ee7a8; }
+      .status.error { background: #2a1219; color: #ff8fa3; }
+      .card .title { font-weight: 700; margin-bottom: 6px; }
+      button.danger { background: #ff4d6d; }
+      input + input { margin-top: 8px; }
+      input { margin-bottom: 8px; }
+
     </style>
   </head>
   <body>
     <main>
       <h1>GYST Partner</h1>
 
-      <h2>Neuen Nutzer hinzufügen</h2>
-      <p class="muted">Den Einladungscode bekommst du vom Nutzer (im Add-on unter "Partner einladen").</p>
+      <h2>Nutzer hinzufügen</h2>
+      <p class="muted">Einladungscode vom Nutzer eingeben. Der Code gilt 24 Stunden und nur einmal. Dein Name steht danach in der Nutzer-Liste.</p>
       <input id="invite" type="text" autocomplete="off" spellcheck="false" placeholder="Einladungscode" />
+      <input id="partnerName" type="text" maxlength="60" placeholder="Dein Name (z.B. Anna)" />
       <p><button id="register">Als Partner hinzufügen</button></p>
 
       <h2>Deine Nutzer</h2>
       <div id="accounts"></div>
 
-      <p id="info"></p>
+      <p id="info" class="status" hidden></p>
     </main>
 
     <script>
@@ -38,7 +47,8 @@
         { id: 0, label: '30 Minuten freigeben' },
         { id: 1, label: '1 Stunde freigeben' },
         { id: 2, label: 'Ganzer Tag freigeben' },
-        { id: 3, label: 'Einstellungen freigeben' },
+        { id: 3, label: 'Einstellungen freigeben (einmal speichern)' },
+        { id: 4, label: 'Freigabe beenden', danger: true },
       ];
       const infoEl = document.getElementById('info');
       const accountsEl = document.getElementById('accounts');
@@ -50,6 +60,19 @@
       const toB64 = (bytes) => btoa(String.fromCharCode(...bytes));
       const fromB64 = (text) => Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
       const uuidBytes = (uuid) => Uint8Array.from(uuid.replace(/-/g, '').match(/../g).map((b) => parseInt(b, 16)));
+      const clock = () => Math.floor(Date.now() / 1000);
+
+      function left(seconds) {
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        return m >= 60 ? `${Math.floor(m / 60)} Std. ${m % 60} Min.` : `${m} Min. ${String(s).padStart(2, '0')} s`;
+      }
+
+      function show(kind, text) {
+        infoEl.hidden = false;
+        infoEl.className = `status ${kind}`;
+        infoEl.textContent = text;
+      }
 
       async function newPair() {
         const pair = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']);
@@ -61,74 +84,89 @@
 
       document.getElementById('register').addEventListener('click', async () => {
         const invite = document.getElementById('invite').value.trim();
-        const [accountId] = invite.split('.');
-        if (!accountId || !invite.includes('.')) {
-          infoEl.textContent = 'Einladungscode sieht ungültig aus.';
+        const name = document.getElementById('partnerName').value.trim();
+        if (!invite.includes('.') || !name) {
+          show('error', 'Einladungscode und dein Name sind nötig.');
           return;
         }
         const pair = await newPair();
         const response = await fetch(`${API}/api/partners/register`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ invite, pubkey: pair.pub, name: '' }),
+          body: JSON.stringify({ invite, pubkey: pair.pub, name }),
         });
+        const data = await response.json().catch(() => ({}));
         if (!response.ok) {
-          infoEl.textContent = `Hinzufügen fehlgeschlagen: ${(await response.json()).detail ?? response.status}`;
+          show('error', `Hinzufügen fehlgeschlagen: ${data.detail ?? response.status}`);
           return;
         }
-        save([...load().filter((a) => a.account_id !== accountId), { account_id: accountId, ...pair }]);
+        const accountId = data.account_id;
+        save([...load().filter((a) => a.account_id !== accountId), {
+          account_id: accountId, owner_name: data.owner_name || 'Nutzer', ...pair, last_stamp: 0,
+        }]);
         document.getElementById('invite').value = '';
-        infoEl.textContent = 'Nutzer hinzugefügt.';
+        show('ok', `✓ Verbunden mit ${data.owner_name || 'dem Nutzer'}. Du kannst jetzt Freigaben senden.`);
         render();
       });
 
       async function signed(entry, tierId) {
-        const stamp = Math.max(Math.floor(Date.now() / 1000), (entry.last_stamp ?? 0) + 1);
+        const stamp = Math.max(clock(), (entry.last_stamp ?? 0) + 1);
         const message = new Uint8Array([
           ...DOMAIN, ...uuidBytes(entry.account_id), tierId,
           (stamp >>> 24) & 255, (stamp >>> 16) & 255, (stamp >>> 8) & 255, stamp & 255,
         ]);
         const key = await crypto.subtle.importKey('pkcs8', fromB64(entry.priv), { name: 'Ed25519' }, false, ['sign']);
         const signature = new Uint8Array(await crypto.subtle.sign({ name: 'Ed25519' }, key, message));
-        return { account_id: entry.account_id, pubkey: entry.pub, tier: tierId, stamp, signature: toB64(signature) };
+        return { stamp, body: { account_id: entry.account_id, pubkey: entry.pub, tier: tierId, stamp, signature: toB64(signature) } };
       }
 
-      async function grant(accountId, tierId) {
+      async function grant(accountId, tier) {
         const list = load();
         const entry = list.find((a) => a.account_id === accountId);
-        const body = await signed(entry, tierId);
+        const { stamp, body } = await signed(entry, tier.id);
         const response = await fetch(`${API}/api/grant`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         });
-        if (response.ok) {
-          entry.last_stamp = body.stamp;
-          save(list);
-          infoEl.textContent = 'Freigabe gesendet. Im Add-on wirkt sie sofort.';
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const detail = typeof data.detail === 'string' ? data.detail : response.status;
+          show('error', `✗ Nicht gesendet: ${detail}`);
+          return;
+        }
+        entry.last_stamp = stamp;
+        save(list);
+        const now = data.now;
+        if (tier.id === 4) {
+          show('ok', `✓ Freigabe beendet bei ${entry.owner_name}. Der Nutzer ist wieder gesperrt.`);
+        } else if (tier.id === 3) {
+          show('ok', `✓ Einstellungen frei bei ${entry.owner_name}: noch ${left(data.settings_until - now)} (bis zum Speichern)`);
         } else {
-          const detail = (await response.json().catch(() => ({}))).detail;
-          infoEl.textContent = `Nicht freigegeben (${response.status}): ${typeof detail === 'string' ? detail : JSON.stringify(detail ?? '')}`;
+          show('ok', `✓ Freigabe bei ${entry.owner_name} aktiv: noch ${left(data.grant_until - now)}`);
         }
       }
 
       function render() {
         accountsEl.replaceChildren();
-        for (const entry of load()) {
+        const list = load();
+        for (const entry of list) {
           const card = document.createElement('div');
           card.className = 'card';
           const title = document.createElement('div');
-          title.textContent = `Nutzer ${entry.account_id.slice(0, 8)}`;
+          title.className = 'title';
+          title.textContent = entry.owner_name;
           card.append(title);
           for (const tier of TIERS) {
             const btn = document.createElement('button');
             btn.textContent = tier.label;
-            btn.addEventListener('click', () => grant(entry.account_id, tier.id));
+            if (tier.danger) btn.className = 'danger';
+            btn.addEventListener('click', () => grant(entry.account_id, tier));
             card.append(btn);
           }
           accountsEl.append(card);
         }
-        if (load().length === 0) accountsEl.textContent = 'Noch keine Nutzer.';
+        if (list.length === 0) accountsEl.textContent = 'Noch keine Nutzer.';
       }
 
       render();

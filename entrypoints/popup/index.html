@@ -16,7 +16,7 @@
       <button id="toggle" class="big" type="button" aria-pressed="false"></button>
       <div id="grant" class="status" hidden><span id="grantText"></span></div>
       <p id="syncState" class="error" hidden data-i18n="syncOffline"></p>
-      <p id="grantNeeded" class="error" hidden data-i18n="grantRequired"></p>
+      <p id="notice" class="error" hidden></p>
 
       <section class="group">
         <h2 data-i18n="sitesTitle"></h2>
@@ -88,6 +88,10 @@
       <section class="group">
         <h2 data-i18n="settingsTitle"></h2>
         <label class="field">
+          <span data-i18n="displayNameLabel"></span>
+          <input id="displayName" type="text" maxlength="40" />
+        </label>
+        <label class="field">
           <span data-i18n="popupMessageLabel"></span>
           <input id="popupMessage" type="text" data-i18n-placeholder="defaultPopupMessage" />
         </label>
@@ -105,6 +109,7 @@
         </label>
         <div class="row-form">
           <button id="save" type="button" class="btn" data-i18n="save"></button>
+          <small id="saveHint" class="hint" hidden></small>
           <small id="saved" hidden data-i18n="saved"></small>
         </div>
       </section>

@@ -16,13 +16,14 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from psycopg.rows import dict_row
 
-from gating import TIERS, gated_changes, verify_grant
+from gating import TIERS, verify_grant
 
 HERE = Path(__file__).parent
 SCHEMA = (HERE / 'schema.sql').read_text()
-INVITE_DAYS = 7
+INVITE_DAYS = 1
 MAX_SITES = 500
 MAX_WINDOWS = 200
+DOMAIN = re.compile(r'[a-z0-9-]+(\.[a-z0-9-]+)+')
 
 
 def connect():
@@ -74,7 +75,16 @@ class SettingsIn(BaseModel):
     blockMessage: str = Field(max_length=300)
     language: str = Field(pattern=r'^(auto|de|en)$')
     unlock: str = Field(pattern=r'^(text|partner)$')
+    displayName: str = Field(default='', max_length=40)
     free_windows: list[dict] = Field(max_length=MAX_WINDOWS)
+
+
+class SiteIn(BaseModel):
+    domain: str = Field(min_length=1, max_length=253)
+
+
+class EnabledIn(BaseModel):
+    enabled: bool
 
 
 class GrantIn(BaseModel):
@@ -122,29 +132,66 @@ def get_state(account_id: str = Depends(auth), conn=Depends(db)):
     }
 
 
-@app.put('/api/settings')
-def put_settings(body: SettingsIn, account_id: str = Depends(auth), conn=Depends(db)):
-    if any(not valid_window(w) for w in body.free_windows):
-        raise HTTPException(422, 'invalid free window')
+def locked_state(conn, account_id):
     row = conn.execute('SELECT settings, free_windows, grant_until, settings_until FROM account_state WHERE account_id = %s FOR UPDATE',
                        (account_id,)).fetchone()
-    old = {**row['settings'], 'free_windows': row['free_windows']}
-    new = body.model_dump()
+    partner = conn.execute('SELECT 1 FROM partners WHERE account_id = %s LIMIT 1', (account_id,)).fetchone() is not None
+    return row, partner
+
+
+@app.put('/api/settings')
+def put_settings(body: SettingsIn, account_id: str = Depends(auth), conn=Depends(db)):
+    """Save button. With a partner, saving needs a time grant or a settings grant. A settings grant is used up by this save."""
+    if any(not valid_window(w) for w in body.free_windows):
+        raise HTTPException(422, 'invalid free window')
+    row, has_partner = locked_state(conn, account_id)
     now = int(time.time())
-    # Gating only applies once a partner exists; the first save of a new account sets up the defaults.
-    has_partner = conn.execute('SELECT 1 FROM partners WHERE account_id = %s LIMIT 1', (account_id,)).fetchone()
-    gated = gated_changes(old, new) if row['settings'] and has_partner else []
     time_grant = row['grant_until'] > now
     settings_grant = row['settings_until'] > now
-    if gated and not (time_grant or settings_grant):
-        raise HTTPException(403, {'error': 'grant_required', 'changes': gated})
-    settings = {k: v for k, v in new.items() if k != 'free_windows'}
-    settings_until = 0 if (settings_grant and not time_grant and gated) else row['settings_until']
+    first_save = not row['settings']
+    if has_partner and not first_save and not (time_grant or settings_grant):
+        raise HTTPException(403, {'error': 'grant_required'})
+    settings_until = row['settings_until'] if (time_grant or first_save or not has_partner) else 0
+    settings = body.model_dump(exclude={'free_windows'})
     conn.execute(
         'UPDATE account_state SET settings = %s, free_windows = %s, settings_until = %s WHERE account_id = %s',
-        (json.dumps(settings), json.dumps(new['free_windows']), settings_until, account_id),
+        (json.dumps(settings), json.dumps(body.free_windows), settings_until, account_id),
     )
     return {'ok': True, 'settings_until': settings_until}
+
+
+@app.post('/api/sites')
+def add_site(body: SiteIn, account_id: str = Depends(auth), conn=Depends(db)):
+    """Adding a site is always free: a block can be extended without a partner."""
+    domain = body.domain.strip().lower()
+    if not DOMAIN.fullmatch(domain):
+        raise HTTPException(422, 'invalid domain')
+    row, _ = locked_state(conn, account_id)
+    settings = row['settings'] or {}
+    sites = list(settings.get('sites', []))
+    if domain not in sites:
+        sites.append(domain)
+    settings = {**settings, 'sites': sites[:MAX_SITES]}
+    conn.execute('UPDATE account_state SET settings = %s WHERE account_id = %s', (json.dumps(settings), account_id))
+    return {'ok': True, 'sites': settings['sites']}
+
+
+@app.post('/api/enabled')
+def set_enabled(body: EnabledIn, account_id: str = Depends(auth), conn=Depends(db)):
+    """Turning the block on is free. Turning it off needs a running time grant (partner)."""
+    row, has_partner = locked_state(conn, account_id)
+    now = int(time.time())
+    if not body.enabled and has_partner and row['grant_until'] <= now:
+        raise HTTPException(403, {'error': 'grant_required'})
+    settings = {**(row['settings'] or {}), 'enabled': body.enabled}
+    conn.execute('UPDATE account_state SET settings = %s WHERE account_id = %s', (json.dumps(settings), account_id))
+    return {'ok': True}
+
+
+@app.get('/api/partners')
+def list_partners(account_id: str = Depends(auth), conn=Depends(db)):
+    rows = conn.execute('SELECT name, created_at FROM partners WHERE account_id = %s ORDER BY created_at', (account_id,)).fetchall()
+    return {'partners': [{'name': r['name'] or 'Unbenannt', 'since': r['created_at'].isoformat()} for r in rows]}
 
 
 @app.post('/api/invites')
@@ -170,9 +217,10 @@ def register_partner(body: RegisterIn, conn=Depends(db)):
     partner_id = uuid.uuid4()
     conn.execute(
         'INSERT INTO partners (id, account_id, pubkey, name) VALUES (%s, %s, %s, %s) ON CONFLICT (account_id, pubkey) DO NOTHING',
-        (partner_id, invite['account_id'], body.pubkey, body.name),
+        (partner_id, invite['account_id'], body.pubkey, body.name.strip()),
     )
-    return {'account_id': str(invite['account_id'])}
+    owner = conn.execute('SELECT settings FROM account_state WHERE account_id = %s', (invite['account_id'],)).fetchone()
+    return {'account_id': str(invite['account_id']), 'owner_name': (owner['settings'] or {}).get('displayName', '')}
 
 
 @app.post('/api/grant')
@@ -192,7 +240,10 @@ def grant(body: GrantIn, request: Request, conn=Depends(db)):
         raise HTTPException(404, 'account not found')
     if body.stamp <= row['last_stamp']:
         raise HTTPException(409, 'token already used')
-    if tier == 'settings':
+    if tier == 'end':
+        conn.execute('UPDATE account_state SET grant_until = 0, settings_until = 0, last_stamp = %s WHERE account_id = %s',
+                     (body.stamp, body.account_id))
+    elif tier == 'settings':
         conn.execute('UPDATE account_state SET settings_until = %s, last_stamp = %s WHERE account_id = %s',
                      (now + minutes, body.stamp, body.account_id))
     else:
@@ -201,7 +252,9 @@ def grant(body: GrantIn, request: Request, conn=Depends(db)):
                      (grant_until, body.stamp, body.account_id))
     conn.execute('INSERT INTO grant_log (account_id, partner_id, tier) VALUES (%s, %s, %s)',
                  (body.account_id, partner['id'], tier))
-    return {'ok': True, 'tier': tier}
+    state = conn.execute('SELECT grant_until, settings_until FROM account_state WHERE account_id = %s',
+                         (body.account_id,)).fetchone()
+    return {'ok': True, 'tier': tier, 'grant_until': state['grant_until'], 'settings_until': state['settings_until'], 'now': now}
 
 
 @app.get('/partner')

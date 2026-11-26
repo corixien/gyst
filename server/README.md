@@ -28,10 +28,13 @@ The schema is created on startup (`schema.sql`, idempotent).
 |---|---|---|---|
 | POST | `/api/accounts` | none | create account, returns token once |
 | GET | `/api/state` | token | settings, free windows, grant times, partner count |
-| PUT | `/api/settings` | token | save settings; loosening changes need a grant when a partner exists |
+| PUT | `/api/settings` | token | Save button: whole draft at once; with a partner needs a time grant or a settings grant (used up by the save) |
+| POST | `/api/sites` | token | add a blocked site, always free |
+| POST | `/api/enabled` | token | turn block on (free) or off (needs a running time grant with a partner) |
+| GET | `/api/partners` | token | partner names |
 | POST | `/api/invites` | token | one-time partner invite (7 days) |
 | POST | `/api/partners/register` | invite | register a partner public key |
-| POST | `/api/grant` | partner signature | apply a grant (tiers 30m, 1h, day, settings) |
+| POST | `/api/grant` | partner signature | apply a grant (tiers 30m, 1h, day, settings, end). Response has the new times for feedback |
 | GET | `/partner` | none | partner page |
 
-Grant rules: each grant is signed by a registered partner key over domain `gyst-grant-v2`, account id, tier and a unix stamp. Stamps must rise per account (single use) and be within 5 minutes of server time.
+Invites expire after 1 day and are single use. Grant rules: each grant is signed by a registered partner key over domain `gyst-grant-v2`, account id, tier and a unix stamp. Stamps must rise per account (single use) and be within 5 minutes of server time.

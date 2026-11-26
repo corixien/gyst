@@ -47,5 +47,14 @@ export const putSettings = (server: string, token: string, settings: Settings, f
     body: { ...settings, free_windows: freeWindows },
   });
 
+export const fetchPartners = (server: string, token: string) =>
+  apiCall<{ partners: { name: string; since: string }[] }>(server, '/api/partners', { token });
+
+export const addSite = (server: string, token: string, domain: string) =>
+  apiCall<{ ok: boolean; sites: string[] }>(server, '/api/sites', { method: 'POST', token, body: { domain } });
+
+export const setEnabled = (server: string, token: string, enabled: boolean) =>
+  apiCall<{ ok: boolean }>(server, '/api/enabled', { method: 'POST', token, body: { enabled } });
+
 export const createInvite = (server: string, token: string) =>
   apiCall<{ code: string; expires_in_days: number }>(server, '/api/invites', { method: 'POST', token });

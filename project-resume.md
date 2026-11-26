@@ -21,7 +21,8 @@ WXT 0.21 + TypeScript + Vitest, MV3. Vanilla TS + CSS. `storage.local`, DNR dyna
 ## Commands
 `npm run check`, `npm test`, `npm run dev:firefox`.
 
-## Current state (0.2.0)
+## Current state (0.2.1)
+- Known limit: the account token on the device can create invites, so the owner can register a partner key of their own. Only a third party identity (e.g. email confirmation to an address the owner does not control) closes this. Not built, decision pending.
 - Server v1: 15 API tests against local Postgres (podman container, port 55432, test only). Partner page served at `/partner`.
 - Add-on: account, invite, sync, gated changes, blocking, block-page release. Verified in headless Chrome (popup, partner grant, gated removal refused, block and release).
 - NOT done: Firefox desktop run with companion, Firefox Android test, Render deploy, Neon DB (user creates both), companion lock on real hardware.

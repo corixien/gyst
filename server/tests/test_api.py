@@ -61,38 +61,59 @@ class ApiTest(unittest.TestCase):
     def test_unknown_token_rejected(self):
         self.assertEqual(self.client.get('/api/state', headers={'Authorization': 'Bearer nope'}).status_code, 401)
 
-    def test_without_partner_nothing_is_gated(self):
+    def test_without_partner_save_and_disable_are_free(self):
         self.assertEqual(self.client.put('/api/settings', headers=self.auth, json={**BASE_SETTINGS, 'enabled': False}).status_code, 200)
 
-    def test_adding_sites_and_enabling_free_but_disable_gated(self):
+    def test_save_needs_grant_when_partner_exists(self):
         self.partner()
-        self.assertEqual(self.client.put('/api/settings', headers=self.auth,
-                                         json={**BASE_SETTINGS, 'sites': ['youtube.com', 'x.com']}).status_code, 200)
-        r = self.client.put('/api/settings', headers=self.auth, json={**BASE_SETTINGS, 'enabled': False})
+        r = self.client.put('/api/settings', headers=self.auth, json={**BASE_SETTINGS, 'popupMessage': 'x'})
         self.assertEqual(r.status_code, 403)
         self.assertEqual(r.json()['detail']['error'], 'grant_required')
 
-    def test_partner_count_in_state(self):
+    def test_adding_site_is_free_even_with_partner(self):
         self.partner()
-        self.assertEqual(self.client.get('/api/state', headers=self.auth).json()['partners'], 1)
+        r = self.client.post('/api/sites', headers=self.auth, json={'domain': 'X.com'})
+        self.assertEqual(r.status_code, 200)
+        self.assertIn('x.com', r.json()['sites'])
 
-    def test_time_grant_allows_gated_change(self):
+    def test_invalid_domain_rejected(self):
+        self.assertEqual(self.client.post('/api/sites', headers=self.auth, json={'domain': 'not a domain'}).status_code, 422)
+
+    def test_enable_free_disable_needs_time_grant(self):
+        key, _ = self.partner()
+        self.assertEqual(self.client.post('/api/enabled', headers=self.auth, json={'enabled': False}).status_code, 403)
+        self.assertEqual(self.grant(key, 3).status_code, 200)  # settings grant is not enough to switch off
+        self.assertEqual(self.client.post('/api/enabled', headers=self.auth, json={'enabled': False}).status_code, 403)
+        self.assertEqual(self.grant(key, 0, stamp=int(time.time()) + 1).status_code, 200)
+        self.assertEqual(self.client.post('/api/enabled', headers=self.auth, json={'enabled': False}).status_code, 200)
+        self.assertEqual(self.client.post('/api/enabled', headers=self.auth, json={'enabled': True}).status_code, 200)
+
+    def test_time_grant_allows_save(self):
         key, _ = self.partner()
         self.assertEqual(self.grant(key, 1).status_code, 200)
-        r = self.client.put('/api/settings', headers=self.auth, json={**BASE_SETTINGS, 'enabled': False})
-        self.assertEqual(r.status_code, 200)
+        self.assertEqual(self.client.put('/api/settings', headers=self.auth, json={**BASE_SETTINGS, 'enabled': False}).status_code, 200)
         self.assertGreater(self.client.get('/api/state', headers=self.auth).json()['grant_until'], time.time())
 
-    def test_settings_grant_is_consumed_by_one_save(self):
+    def test_settings_grant_is_used_up_by_one_save(self):
         key, _ = self.partner()
-        self.client.put('/api/settings', headers=self.auth, json={**BASE_SETTINGS, 'sites': ['youtube.com', 'b.com']})
         self.assertEqual(self.grant(key, 3).status_code, 200)
-        self.assertEqual(self.client.put('/api/settings', headers=self.auth,
-                                         json={**BASE_SETTINGS, 'sites': []}).status_code, 200)
-        r = self.client.put('/api/settings', headers=self.auth, json={**BASE_SETTINGS, 'sites': ['a.com']})
-        self.assertEqual(r.status_code, 200)  # adding a site is always free
-        r = self.client.put('/api/settings', headers=self.auth, json={**BASE_SETTINGS, 'sites': []})
+        self.assertEqual(self.client.put('/api/settings', headers=self.auth, json={**BASE_SETTINGS, 'popupMessage': 'a'}).status_code, 200)
+        r = self.client.put('/api/settings', headers=self.auth, json={**BASE_SETTINGS, 'popupMessage': 'b'})
         self.assertEqual(r.status_code, 403)
+
+    def test_end_grant_stops_time_and_settings(self):
+        key, _ = self.partner()
+        self.assertEqual(self.grant(key, 1).status_code, 200)
+        self.assertEqual(self.grant(key, 3, stamp=int(time.time()) + 1).status_code, 200)
+        r = self.grant(key, 4, stamp=int(time.time()) + 2)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()['grant_until'], 0)
+        self.assertEqual(r.json()['settings_until'], 0)
+
+    def test_grant_response_has_times_for_feedback(self):
+        key, _ = self.partner()
+        r = self.grant(key, 1).json()
+        self.assertGreater(r['grant_until'], r['now'])
 
     def test_replayed_stamp_rejected(self):
         key, _ = self.partner()
@@ -111,18 +132,26 @@ class ApiTest(unittest.TestCase):
         key, _ = self.partner()
         other_account = self.client.post('/api/accounts').json()
         body = self.sign(key, 0)
-        body['account_id'] = other_account['account_id']  # signed for the first account, sent for another
+        body['account_id'] = other_account['account_id']
         self.assertEqual(self.client.post('/api/grant', json=body).status_code, 403)
 
     def test_old_stamp_rejected(self):
         key, _ = self.partner()
         self.assertEqual(self.grant(key, 0, stamp=int(time.time()) - 3600).status_code, 403)
 
-    def test_invite_single_use(self):
+    def test_invite_single_use_and_returns_owner_name(self):
+        self.client.put('/api/settings', headers=self.auth, json={**BASE_SETTINGS, 'displayName': 'Mateo'})
         invite = self.client.post('/api/invites', headers=self.auth).json()['code']
         pub = Ed25519PrivateKey.generate().public_key().public_bytes_raw().hex()
-        self.assertEqual(self.client.post('/api/partners/register', json={'invite': invite, 'pubkey': pub}).status_code, 200)
+        r = self.client.post('/api/partners/register', json={'invite': invite, 'pubkey': pub, 'name': 'Anna'})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()['owner_name'], 'Mateo')
         self.assertEqual(self.client.post('/api/partners/register', json={'invite': invite, 'pubkey': pub}).status_code, 400)
+
+    def test_partner_list_shows_names(self):
+        self.partner('Anna')
+        names = self.client.get('/api/partners', headers=self.auth).json()['partners']
+        self.assertEqual([p['name'] for p in names], ['Anna'])
 
     def test_multiple_partners_per_account(self):
         a, _ = self.partner('a')

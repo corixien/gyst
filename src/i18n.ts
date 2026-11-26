@@ -62,6 +62,13 @@ const de = {
   partnersCount: 'Partner: {count}',
   grantRequired: 'Dafür braucht es die Freigabe deines Partners.',
   errorGeneric: 'Das hat nicht geklappt.',
+  displayNameLabel: 'Dein Name (Partner sehen ihn)',
+  unsaved: 'Ungespeicherte Änderungen',
+  pausedByGrant: 'Pausiert durch Freigabe',
+  pausedHint: 'Der Partner kann die Freigabe beenden.',
+  saveNeedsGrant: 'Speichern braucht eine Freigabe deines Partners.',
+  grantSent: 'Freigabe ist aktiv.',
+  partnerList: 'Partner: {names}',
 };
 
 export type MessageKey = keyof typeof de;
@@ -128,6 +135,13 @@ const en: Record<MessageKey, string> = {
   partnersCount: 'Partners: {count}',
   grantRequired: 'This needs a grant from your partner.',
   errorGeneric: 'That did not work.',
+  displayNameLabel: 'Your name (partners see it)',
+  unsaved: 'Unsaved changes',
+  pausedByGrant: 'Paused by a grant',
+  pausedHint: 'Your partner can end the grant.',
+  saveNeedsGrant: 'Saving needs a grant from your partner.',
+  grantSent: 'Grant is active.',
+  partnerList: 'Partners: {names}',
 };
 
 const messages = { de, en } as const;
