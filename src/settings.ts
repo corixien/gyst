@@ -1,3 +1,4 @@
+import type { FreeWindow } from './schedule';
 export type Language = 'auto' | 'de' | 'en';
 
 // How turning off or removing a site is confirmed: the typed sentence, or an 8-digit code from a partner.
@@ -10,6 +11,15 @@ export interface Settings {
   blockMessage: string; // text on the block page; empty = default
   language: Language;
   unlock: UnlockMode;
+}
+
+// Unsaved popup edits. Kept on this device until saved or reset.
+export interface Draft {
+  popupMessage: string;
+  blockMessage: string;
+  language: Language;
+  sites: string[];
+  free: FreeWindow[];
 }
 
 export const DEFAULT_SETTINGS: Settings = {

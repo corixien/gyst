@@ -15,8 +15,8 @@ import { normalizeDomain } from '../../src/blocklist';
 import { matchesSentence } from '../../src/confirm';
 import { defaultPopupMessage, resolveLocale, t, type Locale, type MessageKey } from '../../src/i18n';
 import type { FreeWindow } from '../../src/schedule';
-import { normalizeSettings, type Language, type Settings } from '../../src/settings';
-import { settingsItem } from '../../src/storage';
+import { normalizeSettings, type Draft, type Language, type Settings } from '../../src/settings';
+import { draftItem, settingsItem } from '../../src/storage';
 import { accountItem, remoteItem, syncNow } from '../../src/sync';
 
 const CONFIRM_SECONDS = 10;
@@ -31,13 +31,7 @@ let grantUntil = 0;
 let settingsUntil = 0;
 let partners = 0;
 
-interface Draft {
-  popupMessage: string;
-  blockMessage: string;
-  language: Language;
-  sites: string[];
-  free: FreeWindow[];
-}
+// Unsaved edits live in `draft` and in storage (draftItem), so they survive closing the popup.
 let draft: Draft = { popupMessage: '', blockMessage: '', language: 'auto', sites: [], free: [] };
 let ready = false; // set once the first draft is built from the saved state
 
@@ -52,6 +46,9 @@ const languageSelect = $<HTMLSelectElement>('language');
 const ruleHint = $<HTMLParagraphElement>('ruleHint');
 const saveButton = $<HTMLButtonElement>('save');
 const saveHint = $<HTMLElement>('saveHint');
+const resetDraftButton = $<HTMLButtonElement>('resetDraft');
+const sitesNote = $<HTMLParagraphElement>('sitesNote');
+const freeNote = $<HTMLParagraphElement>('freeNote');
 const saved = $<HTMLElement>('saved');
 const dialog = $<HTMLDialogElement>('confirm');
 const confirmForm = $<HTMLFormElement>('confirmForm');
@@ -212,9 +209,34 @@ function renderDraft() {
     empty.textContent = t('freeEmpty', locale);
     freeList.append(empty);
   }
-  saveHint.hidden = !dirty();
-  saveHint.textContent = t('unsaved', locale);
+  renderNotes();
+  void draftItem.setValue(dirty() ? draft : null);
 }
+
+const sameWindow = (a: FreeWindow, b: FreeWindow) => a.day === b.day && a.from === b.from && a.to === b.to;
+
+// With partners, removing a site, adding a free window or changing messages needs a grant. Until then these
+// stay as unsaved edits, marked here, and the reset button brings back the saved state.
+function renderNotes() {
+  const locked = partners > 0 && !grantActive();
+  const removedSites = settings.sites.some((site) => !draft.sites.includes(site));
+  const addedWindows = draft.free.some((w) => !freeWindows.some((f) => sameWindow(f, w)));
+  const changedMessages =
+    draft.popupMessage !== settings.popupMessage || draft.blockMessage !== settings.blockMessage || draft.language !== settings.language;
+  sitesNote.hidden = !(locked && removedSites);
+  sitesNote.textContent = t('needsGrantNote', locale);
+  freeNote.hidden = !(locked && addedWindows);
+  freeNote.textContent = t('needsGrantNote', locale);
+  const needsGrant = (locked && (removedSites || addedWindows)) || (locked && !settingsOpen() && changedMessages);
+  saveHint.hidden = !dirty();
+  saveHint.textContent = needsGrant ? t('draftNeedsGrant', locale) : t('unsaved', locale);
+  resetDraftButton.hidden = !dirty();
+}
+
+resetDraftButton.onclick = () => {
+  draft = fromSettings();
+  renderDraft();
+};
 
 // Day 0 is Monday. 5 Jan 2026 was a Monday, so the names follow the UI language.
 const weekdayName = (day: number, style: 'long' | 'short' = 'long') =>
@@ -524,7 +546,7 @@ function fromSettings(): Draft {
 
 async function init() {
   settings = normalizeSettings(await settingsItem.getValue());
-  draft = fromSettings();
+  draft = (await draftItem.getValue()) ?? fromSettings();
   applyLocale();
   freeDaysBox.replaceChildren(
     ...[0, 1, 2, 3, 4, 5, 6].map((day) => {
@@ -538,7 +560,6 @@ async function init() {
   );
   await syncNow();
   await refreshAuthoritative();
-  draft = fromSettings();
   ready = true;
   renderDraft();
   setInterval(renderGrant, 1000);

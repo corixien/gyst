@@ -2,7 +2,7 @@ import { browser } from 'wxt/browser';
 import { isBlockedUrl } from '../src/blocklist';
 import { askCompanion } from '../src/companion';
 import { DEFAULT_SETTINGS, type Settings } from '../src/settings';
-import { blockedTabsItem, readSettings, settingsItem } from '../src/storage';
+import { blockedTabsItem, readSettings, resumeItem, settingsItem } from '../src/storage';
 import { isFreeNow, syncNow } from '../src/sync';
 
 const BLOCK_PAGE = '/blocked.html';
@@ -81,6 +81,38 @@ export default defineBackground(() => {
         }),
     );
   };
+
+  // Content script on a blocked page: its time ran out or its free window ended. Block it now, remember the video second.
+  browser.runtime.onMessage.addListener(async (message, sender) => {
+    const tabId = sender.tab?.id;
+    const url = sender.url;
+    if (message?.type === 'gyst-block' && tabId !== undefined && url) {
+      const settings = await readSettings();
+      if (!isBlockedUrl(url, blockedDomains(settings)) || (await isFreeNow())) return { blocked: false };
+      const reply = await askCompanion({ type: 'blocked', host: new URL(url).hostname });
+      if (reply?.free) return { blocked: false };
+      await serial(async () => {
+        const now = Date.now();
+        const resume = await resumeItem.getValue();
+        const kept = Object.fromEntries(Object.entries(resume).filter(([, entry]) => now - entry.at < 30 * 60_000));
+        if (typeof message.time === 'number' && message.time > 0) kept[url] = { time: message.time, at: now };
+        await resumeItem.setValue(kept);
+        const tabs = await blockedTabsItem.getValue();
+        await blockedTabsItem.setValue({ ...tabs, [tabId]: url });
+        await browser.tabs.update(tabId, { url: blockPageUrl() });
+      });
+      return { blocked: true };
+    }
+    if (message?.type === 'gyst-resume' && url) {
+      const resume = await resumeItem.getValue();
+      const entry = resume[url];
+      if (!entry) return { time: null };
+      const { [url]: _used, ...rest } = resume;
+      await resumeItem.setValue(rest);
+      return { time: entry.time };
+    }
+    return undefined;
+  });
 
   // Pull server state regularly; the popup and block page sync on their own too.
   browser.alarms.create('gyst-sync', { periodInMinutes: 0.5 });

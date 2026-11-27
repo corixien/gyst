@@ -30,6 +30,8 @@ WXT 0.21 + TypeScript + Vitest, MV3. Vanilla TS + CSS. `storage.local`, DNR dyna
 - Toggle: running grant shows Off; tap turns block on, ends grant. Settings grant cannot switch off.
 - Sentence (10 s) only without partners; rule hint in settings shows which applies.
 - Residual limit: owner can skip connecting the add-on (local mode with sentence) or clear storage. Partner signup is open, so someone can make a fake partner and an owner account for themselves; closing signup (admin-created partners) would stop that.
+- Popup drafts persist (local:draft). Unsaved loosening (removed site, added free window, changed messages) stays marked with a reset button until a grant allows Save.
+- Content script (entrypoints/content.ts) on blocked domains: checks every 1 s, blocks the open tab when grant/free window ends (gyst-block message), stores the video second (session:resume) and seeks to it after release (gyst-resume).
 - Owner name: own endpoint `PUT /api/owner/name`, no grant, shown to all partners. Partner labels removed.
 - Loosening (remove site, add free window) needs time grant on Save; tightening with settings grant.
 - Device form ("Gerät verbinden") only shown while no partner is connected.
