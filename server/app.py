@@ -103,8 +103,11 @@ class SettingsIn(BaseModel):
     blockMessage: str = Field(max_length=300)
     language: str = Field(pattern=r'^(auto|de|en)$')
     unlock: str = Field(pattern=r'^(text|partner)$')
-    displayName: str = Field(default='', max_length=40)
     free_windows: list[dict] = Field(max_length=MAX_WINDOWS)
+
+
+class OwnerNameIn(BaseModel):
+    name: str = Field(max_length=40)
 
 
 class SiteIn(BaseModel):
@@ -125,10 +128,6 @@ class CredentialsIn(BaseModel):
     password: str = Field(min_length=8, max_length=200)
 
 
-class NewOwnerIn(BaseModel):
-    label: str = Field(default='', max_length=40)
-
-
 class PairingIn(BaseModel):
     username: str = Field(min_length=3, max_length=20)
 
@@ -146,7 +145,7 @@ class RemoveIn(BaseModel):
 
 
 def settings_row(conn, account_id: str):
-    return conn.execute('SELECT settings, free_windows, grant_until, settings_until FROM account_state WHERE account_id = %s',
+    return conn.execute('SELECT settings, free_windows, grant_until, settings_until, owner_name FROM account_state WHERE account_id = %s',
                         (account_id,)).fetchone()
 
 
@@ -192,6 +191,7 @@ def get_state(account_id: str = Depends(device_account), conn=Depends(db)):
         'free_windows': row['free_windows'],
         'grant_until': row['grant_until'],
         'settings_until': row['settings_until'],
+        'owner_name': row['owner_name'],
         'partners': partners,
         'now': int(time.time()),
     }
@@ -213,6 +213,13 @@ def put_settings(body: SettingsIn, account_id: str = Depends(device_account), co
     switching_off = not first_save and (row['settings'] or {}).get('enabled') and not body.enabled
     if has_partner and switching_off and not time_grant:
         raise HTTPException(403, {'error': 'grant_required'})
+    # Loosening (removing a blocked site, adding a free window) also needs a time grant.
+    old_sites = set((row['settings'] or {}).get('sites', []))
+    removes_site = bool(old_sites - set(body.sites))
+    old_windows = {json.dumps(w, sort_keys=True) for w in row['free_windows'] or []}
+    adds_window = any(json.dumps(w, sort_keys=True) not in old_windows for w in body.free_windows)
+    if has_partner and not first_save and (removes_site or adds_window) and not time_grant:
+        raise HTTPException(403, {'error': 'grant_required'})
     settings_until = row['settings_until'] if (time_grant or first_save or not has_partner) else 0
     settings = body.model_dump(exclude={'free_windows'})
     conn.execute(
@@ -220,6 +227,13 @@ def put_settings(body: SettingsIn, account_id: str = Depends(device_account), co
         (json.dumps(settings), json.dumps(body.free_windows), settings_until, account_id),
     )
     return {'ok': True, 'settings_until': settings_until}
+
+
+@app.put('/api/owner/name')
+def set_owner_name(body: OwnerNameIn, account_id: str = Depends(device_account), conn=Depends(db)):
+    """The owner's own name for partners. No grant needed, no Save button."""
+    conn.execute('UPDATE account_state SET owner_name = %s WHERE account_id = %s', (body.name.strip(), account_id))
+    return {'ok': True}
 
 
 @app.post('/api/sites')
@@ -319,7 +333,7 @@ def me(partner_id: str = Depends(partner_of), conn=Depends(db)):
 @app.get('/api/p/accounts')
 def my_accounts(partner_id: str = Depends(partner_of), conn=Depends(db)):
     rows = conn.execute(
-        """SELECT a.id, l.label, s.settings, s.grant_until, s.settings_until
+        """SELECT a.id, s.owner_name, s.settings, s.grant_until, s.settings_until
            FROM links l JOIN accounts a ON a.id = l.account_id JOIN account_state s ON s.account_id = a.id
            WHERE l.partner_id = %s ORDER BY l.created_at""", (partner_id,)).fetchall()
     out = []
@@ -329,8 +343,7 @@ def my_accounts(partner_id: str = Depends(partner_of), conn=Depends(db)):
             (r['id'],)).fetchall()
         out.append({
             'account_id': str(r['id']),
-            'label': r['label'],
-            'owner_name': (r['settings'] or {}).get('displayName', ''),
+            'owner_name': r['owner_name'],
             'enabled': (r['settings'] or {}).get('enabled'),
             'grant_until': r['grant_until'],
             'settings_until': r['settings_until'],
@@ -340,12 +353,12 @@ def my_accounts(partner_id: str = Depends(partner_of), conn=Depends(db)):
 
 
 @app.post('/api/p/accounts')
-def new_owner(body: NewOwnerIn, partner_id: str = Depends(partner_of), conn=Depends(db)):
+def new_owner(partner_id: str = Depends(partner_of), conn=Depends(db)):
     """Creates an owner. This partner is the owner's first partner. The owner claims the code with this username."""
     account_id = uuid.uuid4()
     conn.execute('INSERT INTO accounts (id) VALUES (%s)', (account_id,))
     conn.execute('INSERT INTO account_state (account_id) VALUES (%s)', (account_id,))
-    conn.execute('INSERT INTO links (account_id, partner_id, label) VALUES (%s, %s, %s)', (account_id, partner_id, body.label.strip()))
+    conn.execute('INSERT INTO links (account_id, partner_id) VALUES (%s, %s)', (account_id, partner_id))
     code = new_code()
     conn.execute("INSERT INTO claims (code_hash, account_id, issuer_id, expires_at) VALUES (%s, %s, %s, now() + make_interval(hours => %s))",
                  (sha(normalize_code(code)), account_id, partner_id, OWNER_CODE_HOURS))
@@ -395,8 +408,8 @@ def accept_pairing(body: AcceptIn, partner_id: str = Depends(partner_of), conn=D
         raise HTTPException(400, 'code wrong, expired, used, or for another partner')
     if not linked(conn, str(row['account_id']), str(row['inviter_id'])):
         raise HTTPException(403, 'the partner who invited you is no longer partner of this owner')
-    conn.execute('INSERT INTO links (account_id, partner_id, label) VALUES (%s, %s, %s) ON CONFLICT DO NOTHING',
-                 (row['account_id'], partner_id, ''))
+    conn.execute('INSERT INTO links (account_id, partner_id) VALUES (%s, %s) ON CONFLICT DO NOTHING',
+                 (row['account_id'], partner_id))
     return {'account_id': str(row['account_id'])}
 
 

@@ -65,9 +65,8 @@
       <section id="app" class="hidden">
         <h2>Neuer Nutzer</h2>
         <div class="card">
-          <p class="muted">Du wirst sein erster Partner. Gib ihm danach deinen Benutzernamen und den Code.</p>
+          <p class="muted">Du wirst sein erster Partner. Gib ihm danach deinen Benutzernamen und den Code. Seinen Namen setzt er selbst im Add-on.</p>
           <div class="row">
-            <input id="newLabel" type="text" maxlength="40" placeholder="Wie nennst du ihn? (nur für dich)" />
             <button id="newOwner">Nutzer anlegen</button>
           </div>
         </div>
@@ -221,14 +220,8 @@
         card.className = 'card';
         const name = document.createElement('div');
         name.className = 'name';
-        name.textContent = acc.label || acc.owner_name || 'Nutzer ohne Namen';
+        name.textContent = acc.owner_name || 'Noch ohne Namen';
         card.append(name);
-        if (acc.owner_name && acc.label) {
-          const sub = document.createElement('div');
-          sub.className = 'muted';
-          sub.textContent = `Name im Add-on: ${acc.owner_name}`;
-          card.append(sub);
-        }
 
         const chips = document.createElement('div');
         chips.className = 'chips';
@@ -345,10 +338,8 @@
       }
 
       $('newOwner').onclick = async () => {
-        const label = $('newLabel').value.trim();
         try {
-          const data = await api('/api/p/accounts', { method: 'POST', body: { label } });
-          $('newLabel').value = '';
+          const data = await api('/api/p/accounts', { method: 'POST' });
           say('ok', '', codeBox(`Nutzer angelegt. Er gibt im Add-on ein: Benutzername "${data.partner_username}" und den Code:`, data.code, `Gilt ${data.expires_in_hours} Stunden, einmal nutzbar.`));
           await refreshAccounts();
         } catch (err) {

@@ -10,7 +10,8 @@ CREATE TABLE IF NOT EXISTS account_state (
   settings jsonb NOT NULL DEFAULT '{}'::jsonb,
   free_windows jsonb NOT NULL DEFAULT '[]'::jsonb,
   grant_until bigint NOT NULL DEFAULT 0,
-  settings_until bigint NOT NULL DEFAULT 0
+  settings_until bigint NOT NULL DEFAULT 0,
+  owner_name text NOT NULL DEFAULT ''  -- set by the owner in the add-on, shown to all partners
 );
 
 -- Device tokens of an owner's add-on. Created by claiming a code.
@@ -38,7 +39,6 @@ CREATE TABLE IF NOT EXISTS partner_sessions (
 CREATE TABLE IF NOT EXISTS links (
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   partner_id uuid NOT NULL REFERENCES partner_users(id) ON DELETE CASCADE,
-  label text NOT NULL DEFAULT '',  -- name the partner gave this owner, only shown to that partner
   created_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (account_id, partner_id)
 );
@@ -59,3 +59,6 @@ CREATE TABLE IF NOT EXISTS pairings (
   invitee_id uuid NOT NULL REFERENCES partner_users(id) ON DELETE CASCADE,
   expires_at timestamptz NOT NULL
 );
+
+-- Upgrades for databases created by earlier versions.
+ALTER TABLE account_state ADD COLUMN IF NOT EXISTS owner_name text NOT NULL DEFAULT '';

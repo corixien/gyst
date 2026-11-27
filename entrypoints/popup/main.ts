@@ -6,6 +6,7 @@ import {
   claimDevice,
   fetchPartners,
   putSettings,
+  setOwnerName,
   removePartner,
   setEnabled,
   type PartnerInfo,
@@ -31,21 +32,19 @@ let settingsUntil = 0;
 let partners = 0;
 
 interface Draft {
-  displayName: string;
   popupMessage: string;
   blockMessage: string;
   language: Language;
   sites: string[];
   free: FreeWindow[];
 }
-let draft: Draft = { displayName: '', popupMessage: '', blockMessage: '', language: 'auto', sites: [], free: [] };
+let draft: Draft = { popupMessage: '', blockMessage: '', language: 'auto', sites: [], free: [] };
 let ready = false; // set once the first draft is built from the saved state
 
 const toggle = $<HTMLButtonElement>('toggle');
 const siteInput = $<HTMLInputElement>('siteInput');
 const siteError = $<HTMLParagraphElement>('siteError');
 const sitesList = $<HTMLUListElement>('sites');
-const displayNameInput = $<HTMLInputElement>('displayName');
 const popupMessageInput = $<HTMLInputElement>('popupMessage');
 const popupField = $<HTMLLabelElement>('popupField');
 const blockMessageInput = $<HTMLInputElement>('blockMessage');
@@ -66,7 +65,14 @@ const freeTo = $<HTMLInputElement>('freeTo');
 const freeError = $<HTMLParagraphElement>('freeError');
 const grantBox = $<HTMLDivElement>('grant');
 const grantText = $<HTMLSpanElement>('grantText');
-const notice = $<HTMLParagraphElement>('notice');
+const toggleError = $<HTMLParagraphElement>('toggleError');
+const saveError = $<HTMLParagraphElement>('saveError');
+const siteServerError = $<HTMLParagraphElement>('siteServerError');
+const partnerError = $<HTMLParagraphElement>('partnerError');
+const connectError = $<HTMLParagraphElement>('connectError');
+const nameBox = $<HTMLElement>('nameBox');
+const nameInput = $<HTMLInputElement>('ownerName');
+const nameStatus = $<HTMLParagraphElement>('nameStatus');
 const syncState = $<HTMLParagraphElement>('syncState');
 const partnerList = $<HTMLUListElement>('partnerList');
 const deviceBox = $<HTMLDetailsElement>('device');
@@ -95,10 +101,10 @@ function applyLocale() {
   });
 }
 
-function say(text: string | null, error = true) {
-  notice.hidden = text === null;
-  notice.className = error ? 'error' : 'ok';
-  notice.textContent = text ?? '';
+// Errors show right next to the control that failed. Null clears.
+function showError(el: HTMLElement, text: string | null) {
+  el.hidden = !text;
+  el.textContent = text ?? '';
 }
 
 function formatLeft(seconds: number): string {
@@ -128,7 +134,6 @@ function renderGrant() {
 
 function dirty(): boolean {
   return (
-    draft.displayName !== settings.displayName ||
     draft.popupMessage !== settings.popupMessage ||
     draft.blockMessage !== settings.blockMessage ||
     draft.language !== settings.language ||
@@ -155,7 +160,6 @@ function renderRules() {
 }
 
 function renderDraft() {
-  displayNameInput.value = draft.displayName;
   popupMessageInput.value = draft.popupMessage;
   blockMessageInput.value = draft.blockMessage;
   languageSelect.value = draft.language;
@@ -257,10 +261,10 @@ async function removePartnerNow(partnerId: string) {
   try {
     await removePartner(account.server, account.token, partnerId);
   } catch (err) {
-    say(err instanceof ApiError && err.status === 403 ? t('grantRequired', locale) : t('errorGeneric', locale));
+    showError(partnerError, err instanceof ApiError && err.status === 403 ? t('grantRequired', locale) : t('errorGeneric', locale));
     return;
   }
-  say(null);
+  showError(partnerError, null);
   await syncNow();
   await refreshAuthoritative();
 }
@@ -273,9 +277,12 @@ async function refreshAuthoritative() {
   grantUntil = remote.grant_until ?? 0;
   settingsUntil = remote.settings_until ?? 0;
   partners = remote.partners ?? 0;
+  deviceBox.hidden = partners > 0; // the device form only shows while no partner is connected
   const signedIn = (await accountItem.getValue()) !== null;
   syncState.hidden = !signedIn || remote.synced !== false;
   connectHint.hidden = signedIn;
+  nameBox.hidden = !signedIn;
+  if (document.activeElement !== nameInput) nameInput.value = remote.owner_name ?? '';
   if (!signedIn) deviceBox.open = true;
   if (signedIn) void loadPartners();
   renderToggle();
@@ -323,7 +330,6 @@ function askSentence(title: string, onConfirm: () => Promise<void>) {
 function readDraftInputs() {
   draft = {
     ...draft,
-    displayName: displayNameInput.value.trim(),
     popupMessage: popupMessageInput.value.trim(),
     blockMessage: blockMessageInput.value.trim(),
     language: languageSelect.value as Language,
@@ -336,7 +342,6 @@ async function save() {
   const account = await accountItem.getValue();
   const next: Settings = {
     ...settings,
-    displayName: draft.displayName,
     popupMessage: draft.popupMessage,
     blockMessage: draft.blockMessage,
     language: draft.language,
@@ -350,17 +355,17 @@ async function save() {
     return;
   }
   if (partners > 0 && !grantActive() && !settingsOpen()) {
-    say(t('saveNeedsGrant', locale));
+    showError(saveError, t('saveNeedsGrant', locale));
     return;
   }
   const write = async () => {
     try {
       await putSettings(account.server, account.token, next, draft.free);
     } catch (err) {
-      say(err instanceof ApiError && err.status === 403 ? t('saveNeedsGrant', locale) : t('errorGeneric', locale));
+      showError(saveError, err instanceof ApiError && err.status === 403 ? t('saveNeedsGrant', locale) : t('errorGeneric', locale));
       return;
     }
-    say(null);
+    showError(saveError, null);
     await syncNow();
     await refreshAuthoritative();
     flashSaved();
@@ -397,10 +402,10 @@ toggle.onclick = async () => {
     try {
       await setEnabled(account.server, account.token, turnOn);
     } catch (err) {
-      say(err instanceof ApiError && err.status === 403 ? t('grantRequired', locale) : t('errorGeneric', locale));
+      showError(toggleError, err instanceof ApiError && err.status === 403 ? t('grantRequired', locale) : t('errorGeneric', locale));
       return;
     }
-    say(null);
+    showError(toggleError, null);
     await syncNow();
     await refreshAuthoritative();
   };
@@ -432,7 +437,7 @@ async function addSiteNow(domain: string) {
     try {
       await addSite(account.server, account.token, domain);
     } catch {
-      say(t('errorGeneric', locale));
+      showError(siteServerError, t('errorGeneric', locale));
       return;
     }
     await syncNow();
@@ -459,7 +464,7 @@ $<HTMLFormElement>('freeForm').onsubmit = (event) => {
   renderDraft();
 };
 
-for (const input of [displayNameInput, popupMessageInput, blockMessageInput, languageSelect]) {
+for (const input of [popupMessageInput, blockMessageInput, languageSelect]) {
   input.addEventListener('input', () => {
     readDraftInputs();
     renderDraft();
@@ -474,6 +479,22 @@ showTokenButton.onclick = async () => {
 };
 
 // Connects this device with a code the partner issued. The device token then replaces any local-only state.
+// Owner name: no Save button. Saved on change, shown to every partner.
+nameInput.addEventListener('change', async () => {
+  const account = await accountItem.getValue();
+  if (!account) return;
+  nameStatus.hidden = false;
+  try {
+    await setOwnerName(account.server, account.token, nameInput.value.trim());
+    nameStatus.className = 'ok';
+    nameStatus.textContent = t('nameSaved', locale);
+    await syncNow();
+  } catch {
+    nameStatus.className = 'error';
+    nameStatus.textContent = t('errorGeneric', locale);
+  }
+});
+
 $<HTMLButtonElement>('connect').onclick = async () => {
   const code = connectToken.value.trim();
   const partnerName = connectPartner.value.trim();
@@ -486,14 +507,13 @@ $<HTMLButtonElement>('connect').onclick = async () => {
     await syncNow();
     await refreshAuthoritative();
   } catch (err) {
-    say(err instanceof ApiError && err.status === 400 ? t('errorCode', locale) : t('errorGeneric', locale));
+    showError(connectError, err instanceof ApiError && err.status === 400 ? t('errorCode', locale) : t('errorGeneric', locale));
   }
 };
 
 // Draft starts as a copy of the last saved state. Reopening the popup therefore discards unsaved edits.
 function fromSettings(): Draft {
   return {
-    displayName: settings.displayName,
     popupMessage: settings.popupMessage,
     blockMessage: settings.blockMessage,
     language: settings.language,

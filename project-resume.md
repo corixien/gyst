@@ -30,7 +30,10 @@ WXT 0.21 + TypeScript + Vitest, MV3. Vanilla TS + CSS. `storage.local`, DNR dyna
 - Toggle: running grant shows Off; tap turns block on, ends grant. Settings grant cannot switch off.
 - Sentence (10 s) only without partners; rule hint in settings shows which applies.
 - Residual limit: owner can skip connecting the add-on (local mode with sentence) or clear storage. Partner signup is open, so someone can make a fake partner and an owner account for themselves; closing signup (admin-created partners) would stop that.
-- Server: 26 API tests against local Postgres (podman container, port 55432, test only).
+- Owner name: own endpoint `PUT /api/owner/name`, no grant, shown to all partners. Partner labels removed.
+- Loosening (remove site, add free window) needs time grant on Save; tightening with settings grant.
+- Device form ("Gerät verbinden") only shown while no partner is connected.
+- Server: 30 API tests against local Postgres (podman container, port 55432, test only).
 - NOT done: dashboard not clicked through in a browser; Render deploy and Neon migration (old `partners`/`invites`/`grant_log` tables are unused, `accounts.token_hash` dropped).
 - Dev DB container: `podman run -d --name gyst-pg-test -e POSTGRES_PASSWORD=test -e POSTGRES_DB=gyst -p 55432:5432 docker.io/library/postgres:16-alpine`
 

@@ -38,8 +38,9 @@ The schema is created on startup (`schema.sql`, idempotent).
 | POST | `/api/p/accounts/{id}/grant` | session | grant: 30m, 1h, day, settings, end |
 | POST | `/api/p/accounts/{id}/leave` | session | partner leaves an owner |
 | POST | `/api/devices/claim` | partner username + code | owner's add-on connects; one use |
+| PUT | `/api/owner/name` | device token | owner's own name for partners; no grant, no Save |
 | GET | `/api/state` | device token | settings, free windows, grant times, partner count |
-| PUT | `/api/settings` | device token | Save: with a partner needs a time grant or a settings grant (used up by the save) |
+| PUT | `/api/settings` | device token | Save: with a partner needs a time grant or a settings grant (used up by the save). Removing a site or adding a free window needs a time grant |
 | POST | `/api/sites` | device token | add a blocked site, always free |
 | POST | `/api/enabled` | device token | on (free, ends a grant) or off (needs a running time grant) |
 | GET | `/api/partners` | device token | partner usernames |

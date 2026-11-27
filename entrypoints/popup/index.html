@@ -16,7 +16,7 @@
       <button id="toggle" class="big" type="button" aria-pressed="false"></button>
       <div id="grant" class="status" hidden><span id="grantText"></span></div>
       <p id="syncState" class="error" hidden data-i18n="syncOffline"></p>
-      <p id="notice" class="error" hidden></p>
+      <p id="toggleError" class="error" hidden></p>
 
       <section class="group">
         <h2 data-i18n="sitesTitle"></h2>
@@ -26,6 +26,7 @@
           <button id="addCurrent" type="button" class="btn ghost" data-i18n="addCurrent"></button>
         </form>
         <p id="siteError" class="error" hidden data-i18n="invalidSite"></p>
+        <p id="siteServerError" class="error" hidden></p>
         <ul id="sites" class="sites"></ul>
       </section>
 
@@ -51,6 +52,16 @@
         <h2 data-i18n="inviteTitle"></h2>
         <ul id="partnerList" class="sites"></ul>
         <p class="hint" data-i18n="removePartnerHint"></p>
+        <p id="partnerError" class="error" hidden></p>
+      </section>
+
+      <section id="nameBox" class="group" hidden>
+        <h2 data-i18n="nameTitle"></h2>
+        <label class="field">
+          <span data-i18n="nameLabel"></span>
+          <input id="ownerName" type="text" maxlength="40" />
+        </label>
+        <p id="nameStatus" class="hint" hidden></p>
       </section>
 
       <details id="device" class="device">
@@ -67,6 +78,7 @@
         <div class="row-form">
           <button id="connect" type="button" class="btn" data-i18n="connectButton"></button>
         </div>
+        <p id="connectError" class="error" hidden></p>
         <div class="row-form">
           <button id="showToken" type="button" class="btn ghost" data-i18n="showToken"></button>
         </div>
@@ -79,10 +91,6 @@
       <section class="group">
         <h2 data-i18n="settingsTitle"></h2>
         <p id="ruleHint" class="hint"></p>
-        <label class="field">
-          <span data-i18n="displayNameLabel"></span>
-          <input id="displayName" type="text" maxlength="40" />
-        </label>
         <label id="popupField" class="field">
           <span data-i18n="popupMessageLabel"></span>
           <input id="popupMessage" type="text" data-i18n-placeholder="defaultPopupMessage" />
@@ -104,6 +112,7 @@
           <small id="saveHint" class="hint" hidden></small>
           <small id="saved" hidden data-i18n="saved"></small>
         </div>
+        <p id="saveError" class="error" hidden></p>
       </section>
 
       <footer class="foot" data-i18n="footer"></footer>

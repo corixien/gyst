@@ -29,7 +29,7 @@ class ApiTest(unittest.TestCase):
         reset_db()
         self.client = TestClient(server.app)
         self.p1 = self.partner('anna')  # partner headers
-        self.owner_id, self.owner = self.new_owner(self.p1, 'Max')  # owner headers
+        self.owner_id, self.owner = self.new_owner(self.p1)  # owner headers
         self.client.put('/api/settings', json=BASE_SETTINGS, headers=self.owner)  # first save: setup, no grant
 
     # helpers
@@ -38,8 +38,8 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(r.status_code, 200, r.text)
         return {'Authorization': f"Bearer {r.json()['token']}"}
 
-    def new_owner(self, partner_headers, label=''):
-        r = self.client.post('/api/p/accounts', json={'label': label}, headers=partner_headers)
+    def new_owner(self, partner_headers):
+        r = self.client.post('/api/p/accounts', headers=partner_headers)
         self.assertEqual(r.status_code, 200, r.text)
         data = r.json()
         claim = self.client.post('/api/devices/claim', json={'partner_username': data['partner_username'], 'code': data['code']})
@@ -77,11 +77,11 @@ class ApiTest(unittest.TestCase):
 
     def test_owner_device_cannot_use_partner_routes(self):
         self.assertEqual(self.client.get('/api/p/accounts', headers=self.owner).status_code, 401)
-        self.assertEqual(self.client.post('/api/p/accounts', json={'label': 'x'}, headers=self.owner).status_code, 401)
+        self.assertEqual(self.client.post('/api/p/accounts', headers=self.owner).status_code, 401)
         self.assertEqual(self.pair(self.owner, 'anna').status_code, 401)
 
     def test_claim_needs_right_partner_name_and_is_single_use(self):
-        r = self.client.post('/api/p/accounts', json={'label': 'Second'}, headers=self.p1).json()
+        r = self.client.post('/api/p/accounts', headers=self.p1).json()
         wrong = self.client.post('/api/devices/claim', json={'partner_username': 'nobody', 'code': r['code']})
         self.assertEqual(wrong.status_code, 400)
         ok = self.client.post('/api/devices/claim', json={'partner_username': 'anna', 'code': r['code'].lower()})
@@ -90,7 +90,7 @@ class ApiTest(unittest.TestCase):
 
     def test_claim_fails_for_partner_not_linked_to_owner(self):
         carl = self.partner('carl')
-        r = self.client.post('/api/p/accounts', json={'label': ''}, headers=carl).json()
+        r = self.client.post('/api/p/accounts', headers=carl).json()
         self.client.post(f"/api/p/accounts/{r['account_id']}/leave", headers=carl)
         self.assertEqual(self.client.post('/api/devices/claim', json={'partner_username': 'carl', 'code': r['code']}).status_code, 400)
 
@@ -151,12 +151,42 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(self.grant(other, '1h').status_code, 404)
         self.assertEqual(self.client.get('/api/p/accounts', headers=other).json()['accounts'], [])
 
-    def test_dashboard_shows_owner_partners_and_grant(self):
-        self.grant(self.p1, '30m')
-        self.client.put('/api/settings', headers=self.owner, json={**BASE_SETTINGS, 'displayName': 'Max'})
+    def test_dashboard_shows_owner_name_and_partners(self):
+        self.assertEqual(self.client.put('/api/owner/name', json={'name': 'Max'}, headers=self.owner).status_code, 200)
         acc = self.client.get('/api/p/accounts', headers=self.p1).json()['accounts'][0]
         self.assertEqual(acc['owner_name'], 'Max')
         self.assertEqual(acc['partners'], ['anna'])
+        self.assertEqual(self.client.get('/api/state', headers=self.owner).json()['owner_name'], 'Max')
+
+    def test_owner_name_needs_no_grant_and_no_save(self):
+        self.assertEqual(self.client.put('/api/owner/name', json={'name': 'Neu'}, headers=self.owner).status_code, 200)
+
+    def test_removing_site_needs_time_grant(self):
+        r = self.client.put('/api/settings', headers=self.owner, json={**BASE_SETTINGS, 'sites': []})
+        self.assertEqual(r.status_code, 403)
+        self.grant(self.p1, 'settings')
+        self.assertEqual(self.client.put('/api/settings', headers=self.owner, json={**BASE_SETTINGS, 'sites': []}).status_code, 403)
+        self.grant(self.p1, '30m')
+        self.assertEqual(self.client.put('/api/settings', headers=self.owner, json={**BASE_SETTINGS, 'sites': []}).status_code, 200)
+
+    def test_adding_free_window_needs_time_grant_removing_does_not(self):
+        window = {'day': 0, 'from': '00:01', 'to': '23:59'}
+        self.assertEqual(self.client.put('/api/settings', headers=self.owner,
+                                         json={**BASE_SETTINGS, 'free_windows': [window]}).status_code, 403)
+        self.grant(self.p1, 'settings')
+        self.assertEqual(self.client.put('/api/settings', headers=self.owner,
+                                         json={**BASE_SETTINGS, 'free_windows': [window]}).status_code, 403)
+        self.grant(self.p1, '30m')
+        self.assertEqual(self.client.put('/api/settings', headers=self.owner,
+                                         json={**BASE_SETTINGS, 'free_windows': [window]}).status_code, 200)
+        self.grant(self.p1, 'settings')
+        self.assertEqual(self.client.put('/api/settings', headers=self.owner,
+                                         json={**BASE_SETTINGS, 'free_windows': []}).status_code, 200)
+
+    def test_tightening_settings_with_settings_grant_ok(self):
+        self.grant(self.p1, 'settings')
+        self.assertEqual(self.client.put('/api/settings', headers=self.owner,
+                                         json={**BASE_SETTINGS, 'sites': ['youtube.com', 'x.com'], 'popupMessage': 'hi'}).status_code, 200)
 
     def test_pairing_by_username_and_accept_with_code(self):
         bert = self.partner('bert')
@@ -198,7 +228,7 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(self.client.post('/api/partners/remove', headers=self.owner, json={'partner_id': 'nope'}).status_code, 422)
 
     def test_accounts_are_isolated(self):
-        _, other = self.new_owner(self.partner('carl'), 'Other')
+        _, other = self.new_owner(self.partner('carl'))
         self.client.put('/api/settings', headers=other, json={**BASE_SETTINGS, 'sites': ['other.com']})
         self.assertEqual(self.client.get('/api/state', headers=self.owner).json()['settings']['sites'], ['youtube.com'])
 

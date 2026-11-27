@@ -10,7 +10,6 @@ export interface Settings {
   blockMessage: string; // text on the block page; empty = default
   language: Language;
   unlock: UnlockMode;
-  displayName: string; // shown to partners, e.g. "Mateo"
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -20,7 +19,6 @@ export const DEFAULT_SETTINGS: Settings = {
   blockMessage: '',
   language: 'auto',
   unlock: 'text',
-  displayName: '',
 };
 
 // Stored objects can miss keys from newer versions, so merge over defaults.
@@ -30,6 +28,5 @@ export function normalizeSettings(raw: Partial<Settings> | null | undefined): Se
     ...merged,
     sites: Array.isArray(merged.sites) ? merged.sites.filter((s) => typeof s === 'string') : [],
     unlock: merged.unlock === 'partner' ? 'partner' : 'text',
-    displayName: typeof merged.displayName === 'string' ? merged.displayName : '',
   };
 }

@@ -15,6 +15,7 @@ export interface RemoteState {
   free_windows: FreeWindow[];
   grant_until: number; // unix seconds, 0 = none
   settings_until: number;
+  owner_name: string; // shown to all partners
   partners: number;
   now: number;
 }
@@ -43,6 +44,9 @@ export const claimDevice = (server: string, partnerUsername: string, code: strin
   });
 
 export const fetchState = (server: string, token: string) => apiCall<RemoteState>(server, '/api/state', { token });
+
+export const setOwnerName = (server: string, token: string, name: string) =>
+  apiCall<{ ok: boolean }>(server, '/api/owner/name', { method: 'PUT', token, body: { name } });
 
 export const putSettings = (server: string, token: string, settings: Settings, freeWindows: FreeWindow[]) =>
   apiCall<{ ok: boolean }>(server, '/api/settings', {
