@@ -5,266 +5,385 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>GYST Partner</title>
     <style>
-      body { font-family: system-ui, sans-serif; background: #0b0d12; color: #f2f4f8; margin: 0; }
-      main { max-width: 560px; margin: 32px auto; padding: 0 20px; }
-      h1 { font-size: 22px; }
-      h2 { font-size: 15px; color: #8b93a7; font-weight: 600; margin-top: 28px; }
-      input { width: 100%; box-sizing: border-box; background: #141821; color: #f2f4f8; border: 1px solid #262c3a; border-radius: 8px; padding: 10px; font-size: 15px; margin-bottom: 8px; }
-      button { background: #3b82f6; color: #fff; border: 0; border-radius: 8px; padding: 10px 14px; font-size: 15px; margin: 4px 4px 4px 0; cursor: pointer; }
-      button.ghost { background: #262c3a; }
-      button.danger { background: #ff4d6d; }
-      .card { background: #141821; border-radius: 10px; padding: 14px; margin-top: 10px; }
-      .muted { color: #8b93a7; font-size: 14px; }
-      .status { border-radius: 10px; padding: 12px 14px; margin-top: 16px; font-size: 15px; }
-      .status.ok { background: #0f2a1d; color: #6ee7a8; }
-      .status.error { background: #2a1219; color: #ff8fa3; }
-      .code { display: block; font-family: monospace; font-size: 22px; letter-spacing: 0.08em; background: #0b0d12; border-radius: 8px; padding: 10px; margin: 8px 0; user-select: all; color: #f2f4f8; }
-      .card .title { font-weight: 700; margin-bottom: 6px; }
+      :root { color-scheme: dark; --bg: #0b0d12; --card: #141821; --line: #262c3a; --text: #f2f4f8; --muted: #8b93a7; --accent: #3b82f6; --danger: #ff4d6d; --ok: #6ee7a8; --okbg: #0f2a1d; --errbg: #2a1219; --err: #ff8fa3; }
+      * { box-sizing: border-box; }
+      body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; }
+      main { max-width: 640px; margin: 0 auto; padding: 24px 20px 48px; }
+      header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+      h1 { font-size: 22px; margin: 0; }
+      h2 { font-size: 13px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; margin: 28px 0 10px; }
+      input { width: 100%; background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 10px; font-size: 15px; margin: 4px 0; }
+      button { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 9px 13px; font-size: 14px; cursor: pointer; margin: 3px 3px 3px 0; }
+      button.ghost { background: var(--line); }
+      button.danger { background: var(--danger); }
+      button.link { background: none; color: var(--muted); padding: 4px 0; }
+      .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-top: 12px; }
+      .muted { color: var(--muted); font-size: 14px; margin: 4px 0; }
+      .name { font-size: 18px; font-weight: 700; }
+      .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+      .chip { background: var(--line); border-radius: 999px; padding: 3px 10px; font-size: 13px; }
+      .state { border-radius: 10px; padding: 8px 12px; font-weight: 600; margin: 8px 0; }
+      .state.on { background: rgba(59, 130, 246, 0.14); color: var(--accent); }
+      .state.off { background: var(--line); color: var(--muted); }
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
+      .grid button { margin: 0; }
+      .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+      .row input { flex: 1; min-width: 160px; margin: 0; }
+      .code { display: block; font-family: monospace; font-size: 22px; letter-spacing: 0.08em; background: var(--bg); border-radius: 8px; padding: 10px; margin: 8px 0; user-select: all; }
+      .status { border-radius: 10px; padding: 12px 14px; margin-top: 14px; font-size: 15px; }
+      .status.ok { background: var(--okbg); color: var(--ok); }
+      .status.error { background: var(--errbg); color: var(--err); }
+      .tabs { display: flex; gap: 6px; margin-bottom: 8px; }
+      .tabs button { flex: 1; }
+      .tabs button.ghost { background: var(--card); border: 1px solid var(--line); }
+      .hidden { display: none !important; }
     </style>
   </head>
   <body>
     <main>
-      <h1>GYST Partner</h1>
-      <p class="muted">Ein Nutzer kann sich nicht selbst eintragen. Nur Partner legen Nutzer an, geben Gerätecodes und Einladungen aus.</p>
+      <header>
+        <h1>GYST Partner</h1>
+        <div id="who" class="hidden">
+          <span id="whoName" class="muted"></span>
+          <button id="logout" class="ghost">Abmelden</button>
+        </div>
+      </header>
 
-      <h2>Neuen Nutzer anlegen</h2>
-      <p class="muted">Du wirst automatisch sein erster Partner. Danach bekommst du einen Gerätecode für den Nutzer.</p>
-      <input id="ownerNew" type="text" maxlength="60" placeholder="Dein Name als Partner (z.B. Anna)" />
-      <p><button id="setup">Nutzer anlegen</button></p>
+      <section id="auth" class="hidden">
+        <div class="card">
+          <div class="tabs">
+            <button id="tabLogin" type="button">Anmelden</button>
+            <button id="tabSignup" type="button" class="ghost">Neu registrieren</button>
+          </div>
+          <input id="username" type="text" autocomplete="username" maxlength="20" placeholder="Benutzername (a-z, 0-9, . _ -)" />
+          <input id="password" type="password" autocomplete="current-password" maxlength="200" placeholder="Passwort (mind. 8 Zeichen)" />
+          <div class="row"><button id="authGo">Anmelden</button></div>
+          <p class="muted" id="authHint">Den Benutzernamen gibt es nur einmal. Er ist dein Login auf allen Geräten.</p>
+        </div>
+      </section>
 
-      <h2>Als Partner zu einem bestehenden Nutzer</h2>
-      <p class="muted">Einladungscode von einem anderen Partner eingeben. Er gilt 24 Stunden und nur einmal.</p>
-      <input id="invite" type="text" autocomplete="off" spellcheck="false" placeholder="Einladungscode" />
-      <input id="partnerName" type="text" maxlength="60" placeholder="Dein Name (z.B. Anna)" />
-      <p><button id="register" class="ghost">Als Partner hinzufügen</button></p>
+      <section id="app" class="hidden">
+        <h2>Neuer Nutzer</h2>
+        <div class="card">
+          <p class="muted">Du wirst sein erster Partner. Gib ihm danach deinen Benutzernamen und den Code.</p>
+          <div class="row">
+            <input id="newLabel" type="text" maxlength="40" placeholder="Wie nennst du ihn? (nur für dich)" />
+            <button id="newOwner">Nutzer anlegen</button>
+          </div>
+        </div>
 
-      <h2>Deine Nutzer</h2>
-      <div id="accounts"></div>
+        <h2>Einladung annehmen</h2>
+        <div class="card">
+          <p class="muted">Ein anderer Partner hat dir einen Code geschickt? Hier eintragen.</p>
+          <div class="row">
+            <input id="acceptCode" type="text" autocomplete="off" spellcheck="false" placeholder="Code (z.B. ABCD-EFGH)" />
+            <button id="accept">Verbinden</button>
+          </div>
+        </div>
 
-      <p id="info" class="status" hidden></p>
+        <h2>Deine Nutzer</h2>
+        <div id="accounts"></div>
+      </section>
+
+      <p id="info" class="status hidden" role="status"></p>
     </main>
 
     <script>
       const API = location.origin;
-      const enc = (text) => new TextEncoder().encode(text);
+      const TOKEN = 'gyst-partner-token';
       const TIERS = [
-        { id: 0, label: '30 Minuten freigeben' },
-        { id: 1, label: '1 Stunde freigeben' },
-        { id: 2, label: 'Ganzer Tag freigeben' },
-        { id: 3, label: 'Einstellungen freigeben (einmal speichern)' },
-        { id: 4, label: 'Freigabe beenden', danger: true },
+        { id: '30m', label: '30 Minuten frei' },
+        { id: '1h', label: '1 Stunde frei' },
+        { id: 'day', label: 'Ganzer Tag frei' },
+        { id: 'settings', label: 'Einstellungen (1x speichern)' },
+        { id: 'end', label: 'Freigabe beenden', danger: true },
       ];
-      const infoEl = document.getElementById('info');
-      const accountsEl = document.getElementById('accounts');
+      let mode = 'login';
+      let nowSkew = 0; // server time minus local time, seconds
 
-      // One Ed25519 key pair per account and partner, stored only in this browser.
-      const load = () => JSON.parse(localStorage.getItem('gyst-partner') ?? '[]');
-      const save = (list) => localStorage.setItem('gyst-partner', JSON.stringify(list));
-      const toHex = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
-      const fromHex = (hex) => Uint8Array.from(hex.match(/../g).map((b) => parseInt(b, 16)));
-      const toB64 = (bytes) => btoa(String.fromCharCode(...bytes));
-      const fromB64 = (text) => Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
-      const uuidBytes = (uuid) => fromHex(uuid.replace(/-/g, ''));
-      const u32 = (n) => [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
-      const clock = () => Math.floor(Date.now() / 1000);
+      const $ = (id) => document.getElementById(id);
+      const token = () => localStorage.getItem(TOKEN);
 
-      function left(seconds) {
-        const m = Math.floor(seconds / 60);
-        const s = seconds % 60;
-        return m >= 60 ? `${Math.floor(m / 60)} Std. ${m % 60} Min.` : `${m} Min. ${String(s).padStart(2, '0')} s`;
+      function say(kind, text, nodes = []) {
+        const box = $('info');
+        box.className = `status ${kind}`;
+        box.replaceChildren(document.createTextNode(text), ...nodes);
       }
 
-      function show(kind, text) {
-        infoEl.hidden = false;
-        infoEl.className = `status ${kind}`;
-        infoEl.replaceChildren(document.createTextNode(text));
+      function clearSay() {
+        $('info').className = 'status hidden';
       }
 
-      function showCode(title, code, note) {
-        infoEl.hidden = false;
-        infoEl.className = 'status ok';
-        const head = document.createElement('div');
-        head.textContent = title;
+      function codeBox(title, code, note) {
         const box = document.createElement('code');
         box.className = 'code';
         box.textContent = code;
         const hint = document.createElement('div');
-        hint.className = 'muted';
         hint.textContent = note;
-        infoEl.replaceChildren(head, box, hint);
+        return [document.createTextNode(title), box, hint];
       }
 
-      async function newPair() {
-        const pair = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']);
-        return {
-          priv: toB64(new Uint8Array(await crypto.subtle.exportKey('pkcs8', pair.privateKey))),
-          pub: toHex(new Uint8Array(await crypto.subtle.exportKey('raw', pair.publicKey))),
-        };
-      }
-
-      async function sign(priv, bytes) {
-        const key = await crypto.subtle.importKey('pkcs8', fromB64(priv), { name: 'Ed25519' }, false, ['sign']);
-        return toB64(new Uint8Array(await crypto.subtle.sign({ name: 'Ed25519' }, key, new Uint8Array(bytes))));
-      }
-
-      async function post(path, body) {
+      async function api(path, { method = 'GET', body } = {}) {
         const response = await fetch(`${API}${path}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
+          method,
+          headers: {
+            ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+            ...(token() ? { Authorization: `Bearer ${token()}` } : {}),
+          },
+          body: body !== undefined ? JSON.stringify(body) : undefined,
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
-          const detail = typeof data.detail === 'string' ? data.detail : response.status;
-          throw new Error(String(detail));
+          const detail = typeof data.detail === 'string' ? data.detail : data.detail?.error ?? response.status;
+          const error = new Error(String(detail));
+          error.status = response.status;
+          throw error;
         }
         return data;
       }
 
-      // Partner-signed action on one account: message = domain + account + extra bytes + stamp.
-      async function actOn(entry, domain, extra, path, extraBody = {}) {
-        const stamp = Math.max(clock(), (entry.last_stamp ?? 0) + 1);
-        const signature = await sign(entry.priv, [...enc(domain), ...uuidBytes(entry.account_id), ...extra, ...u32(stamp)]);
-        const data = await post(path, { account_id: entry.account_id, pubkey: entry.pub, stamp, signature, ...extraBody });
-        entry.last_stamp = stamp;
-        return data;
+      function left(seconds) {
+        const total = Math.max(0, Math.ceil(seconds));
+        const h = Math.floor(total / 3600);
+        const m = Math.floor((total % 3600) / 60);
+        const s = total % 60;
+        if (h > 0) return `${h} Std. ${m} Min.`;
+        return `${m} Min. ${String(s).padStart(2, '0')} s`;
       }
 
-      document.getElementById('setup').addEventListener('click', async () => {
-        const name = document.getElementById('ownerNew').value.trim();
-        if (!name) {
-          show('error', 'Dein Name als Partner ist nötig.');
-          return;
-        }
-        try {
-          const pair = await newPair();
-          const stamp = clock();
-          const signature = await sign(pair.priv, [...enc('gyst-setup-v1'), ...fromHex(pair.pub), ...u32(stamp)]);
-          const created = await post('/api/partner-setup', { pubkey: pair.pub, name, stamp, signature });
-          const entry = { account_id: created.account_id, owner_name: 'Nutzer', ...pair, last_stamp: 0 };
-          const code = await actOn(entry, 'gyst-device-v1', [], '/api/partner/device-codes');
-          save([...load(), entry]);
-          document.getElementById('ownerNew').value = '';
-          showCode('✓ Nutzer angelegt. Gerätecode für den Nutzer:', code.code, 'Gilt 10 Minuten. Im Add-on unter "Gerät verbinden" eingeben.');
-          render();
-        } catch (err) {
-          show('error', `✗ Nicht angelegt: ${err.message}`);
-        }
-      });
+      function showAuth() {
+        $('auth').classList.remove('hidden');
+        $('app').classList.add('hidden');
+        $('who').classList.add('hidden');
+      }
 
-      document.getElementById('register').addEventListener('click', async () => {
-        const invite = document.getElementById('invite').value.trim();
-        const name = document.getElementById('partnerName').value.trim();
-        if (!invite.includes('.') || !name) {
-          show('error', 'Einladungscode und dein Name sind nötig.');
+      function showApp(username) {
+        $('auth').classList.add('hidden');
+        $('app').classList.remove('hidden');
+        $('who').classList.remove('hidden');
+        $('whoName').textContent = `Angemeldet als ${username}`;
+      }
+
+      function setMode(next) {
+        mode = next;
+        $('tabLogin').className = next === 'login' ? '' : 'ghost';
+        $('tabSignup').className = next === 'signup' ? '' : 'ghost';
+        $('authGo').textContent = next === 'login' ? 'Anmelden' : 'Registrieren';
+        $('password').autocomplete = next === 'login' ? 'current-password' : 'new-password';
+      }
+
+      async function authenticate() {
+        const username = $('username').value.trim().toLowerCase();
+        const password = $('password').value;
+        try {
+          const data = await api(mode === 'login' ? '/api/p/login' : '/api/p/signup', { method: 'POST', body: { username, password } });
+          localStorage.setItem(TOKEN, data.token);
+          $('password').value = '';
+          await load();
+        } catch (err) {
+          say('error', err.status === 409 ? 'Dieser Benutzername ist schon vergeben.' : `Nicht geklappt: ${err.message}`);
+        }
+      }
+
+      async function load() {
+        if (!token()) return showAuth();
+        try {
+          const me = await api('/api/p/me');
+          showApp(me.username);
+          await refreshAccounts();
+        } catch (err) {
+          localStorage.removeItem(TOKEN);
+          showAuth();
+        }
+      }
+
+      async function refreshAccounts() {
+        const data = await api('/api/p/accounts');
+        nowSkew = data.now - Date.now() / 1000;
+        renderAccounts(data.accounts);
+      }
+
+      function renderAccounts(list) {
+        const box = $('accounts');
+        box.replaceChildren();
+        if (list.length === 0) {
+          const none = document.createElement('p');
+          none.className = 'muted';
+          none.textContent = 'Noch keine Nutzer. Lege oben einen an.';
+          box.append(none);
           return;
         }
-        try {
-          const pair = await newPair();
-          const data = await post('/api/partners/register', { invite, pubkey: pair.pub, name });
-          save([...load().filter((a) => a.account_id !== data.account_id), {
-            account_id: data.account_id, owner_name: data.owner_name || 'Nutzer', ...pair, last_stamp: 0,
-          }]);
-          document.getElementById('invite').value = '';
-          show('ok', `✓ Du bist jetzt Partner bei ${data.owner_name || 'dem Nutzer'}.`);
-          render();
-        } catch (err) {
-          show('error', `Hinzufügen fehlgeschlagen: ${err.message}`);
+        for (const acc of list) box.append(accountCard(acc));
+      }
+
+      function accountCard(acc) {
+        const card = document.createElement('div');
+        card.className = 'card';
+        const name = document.createElement('div');
+        name.className = 'name';
+        name.textContent = acc.label || acc.owner_name || 'Nutzer ohne Namen';
+        card.append(name);
+        if (acc.owner_name && acc.label) {
+          const sub = document.createElement('div');
+          sub.className = 'muted';
+          sub.textContent = `Name im Add-on: ${acc.owner_name}`;
+          card.append(sub);
         }
-      });
+
+        const chips = document.createElement('div');
+        chips.className = 'chips';
+        for (const p of acc.partners) {
+          const chip = document.createElement('span');
+          chip.className = 'chip';
+          chip.textContent = p;
+          chips.append(chip);
+        }
+        card.append(chips);
+
+        const grantLeft = acc.grant_until - (Date.now() / 1000 + nowSkew);
+        const settingsLeft = acc.settings_until - (Date.now() / 1000 + nowSkew);
+        const state = document.createElement('div');
+        if (grantLeft > 0) {
+          state.className = 'state on';
+          state.textContent = `Freigegeben, noch ${left(grantLeft)}`;
+        } else {
+          state.className = 'state off';
+          state.textContent = acc.enabled === false ? 'Blockade aus' : 'Gesperrt';
+        }
+        card.append(state);
+        if (settingsLeft > 0) {
+          const extra = document.createElement('div');
+          extra.className = 'muted';
+          extra.textContent = `Einstellungen offen, noch ${left(settingsLeft)}`;
+          card.append(extra);
+        }
+
+        const grid = document.createElement('div');
+        grid.className = 'grid';
+        for (const tier of TIERS) {
+          const btn = document.createElement('button');
+          btn.textContent = tier.label;
+          if (tier.danger) btn.className = 'danger';
+          btn.onclick = () => grant(acc.account_id, tier);
+          grid.append(btn);
+        }
+        card.append(grid);
+
+        const more = document.createElement('div');
+        more.className = 'row';
+        more.style.marginTop = '10px';
+        more.append(
+          action('Gerätecode für ein weiteres Gerät', () => deviceCode(acc.account_id)),
+          action('Partner hinzufügen', () => pairForm(card, acc.account_id)),
+          action('Nutzer verlassen', () => leave(acc.account_id, name.textContent), 'link'),
+        );
+        card.append(more);
+        return card;
+      }
+
+      function action(label, onClick, className = 'ghost') {
+        const btn = document.createElement('button');
+        btn.textContent = label;
+        btn.className = className;
+        btn.onclick = onClick;
+        return btn;
+      }
 
       async function grant(accountId, tier) {
-        const list = load();
-        const entry = list.find((a) => a.account_id === accountId);
         try {
-          const data = await actOn(entry, 'gyst-grant-v2', [tier.id], '/api/grant', { tier: tier.id });
-          save(list);
-          const now = data.now;
-          if (tier.id === 4) {
-            show('ok', `✓ Freigabe beendet bei ${entry.owner_name}. Der Nutzer ist wieder gesperrt.`);
-          } else if (tier.id === 3) {
-            show('ok', `✓ Einstellungen frei bei ${entry.owner_name}: noch ${left(data.settings_until - now)} (bis zum Speichern)`);
-          } else {
-            show('ok', `✓ Freigabe bei ${entry.owner_name} aktiv: noch ${left(data.grant_until - now)}`);
-          }
+          await api(`/api/p/accounts/${accountId}/grant`, { method: 'POST', body: { tier: tier.id } });
+          say('ok', tier.id === 'end' ? 'Freigabe beendet. Der Nutzer ist wieder gesperrt.' : `Freigabe gesetzt: ${tier.label}.`);
+          await refreshAccounts();
         } catch (err) {
-          save(list);
-          show('error', `✗ Nicht gesendet: ${err.message}`);
+          say('error', `Nicht gesendet: ${err.message}`);
         }
       }
 
       async function deviceCode(accountId) {
-        const list = load();
-        const entry = list.find((a) => a.account_id === accountId);
         try {
-          const data = await actOn(entry, 'gyst-device-v1', [], '/api/partner/device-codes');
-          save(list);
-          showCode(`Gerätecode für ${entry.owner_name}:`, data.code, `Gilt ${data.expires_in_minutes} Minuten, einmal nutzbar. Im Add-on unter "Gerät verbinden" eingeben.`);
+          const data = await api(`/api/p/accounts/${accountId}/device-codes`, { method: 'POST' });
+          say('ok', '', codeBox('Gerätecode (10 Minuten, einmal nutzbar). Nutzer gibt zusammen mit deinem Benutzernamen ein:', `${data.partner_username} / ${data.code}`, 'Im Add-on unter "Gerät verbinden".'));
         } catch (err) {
-          save(list);
-          show('error', `✗ Kein Code: ${err.message}`);
+          say('error', `Kein Code: ${err.message}`);
         }
       }
 
-      async function invite(accountId) {
-        const list = load();
-        const entry = list.find((a) => a.account_id === accountId);
-        try {
-          const data = await actOn(entry, 'gyst-invite-v1', [], '/api/partner/invites');
-          save(list);
-          showCode(`Einladung für einen weiteren Partner bei ${entry.owner_name}:`, data.code, 'Gilt 24 Stunden, einmal nutzbar. Der neue Partner trägt sie oben unter "Als Partner hinzufügen" ein.');
-        } catch (err) {
-          save(list);
-          show('error', `✗ Keine Einladung: ${err.message}`);
-        }
-      }
-
-      // Partner ends its own role for one account. Always allowed, no grant needed.
-      async function leave(accountId) {
-        const list = load();
-        const entry = list.find((a) => a.account_id === accountId);
-        if (!entry || !confirm(`Wirklich aus ${entry.owner_name} austreten? Danach kannst du dort keine Freigaben mehr senden.`)) return;
-        try {
-          await actOn(entry, 'gyst-leave-v1', [], '/api/partners/leave');
-          save(list.filter((a) => a.account_id !== accountId));
-          show('ok', `✓ Du bist bei ${entry.owner_name} nicht mehr Partner.`);
-          render();
-        } catch (err) {
-          save(list);
-          show('error', `✗ Nicht entfernt: ${err.message}`);
-        }
-      }
-
-      function button(label, onClick, className = '') {
-        const btn = document.createElement('button');
-        btn.textContent = label;
-        if (className) btn.className = className;
-        btn.addEventListener('click', onClick);
-        return btn;
-      }
-
-      function render() {
-        accountsEl.replaceChildren();
-        const list = load();
-        for (const entry of list) {
-          const card = document.createElement('div');
-          card.className = 'card';
-          const title = document.createElement('div');
-          title.className = 'title';
-          title.textContent = entry.owner_name;
-          card.append(title);
-          card.append(button('Gerätecode für den Nutzer', () => deviceCode(entry.account_id), 'ghost'));
-          card.append(button('Einladung für weiteren Partner', () => invite(entry.account_id), 'ghost'));
-          for (const tier of TIERS) {
-            card.append(button(tier.label, () => grant(entry.account_id, tier), tier.danger ? 'danger' : ''));
+      function pairForm(card, accountId) {
+        const existing = card.querySelector('.pairing');
+        if (existing) return existing.remove();
+        const form = document.createElement('div');
+        form.className = 'pairing row';
+        form.style.marginTop = '10px';
+        const input = document.createElement('input');
+        input.placeholder = 'Benutzername des anderen Partners';
+        input.maxLength = 20;
+        const go = action('Code erzeugen', async () => {
+          const username = input.value.trim().toLowerCase();
+          if (!username) return;
+          try {
+            const data = await api(`/api/p/accounts/${accountId}/pairings`, { method: 'POST', body: { username } });
+            say('ok', '', codeBox(`Schick ${data.username} diesen Code. Er trägt ihn bei sich unter "Einladung annehmen" ein (24 Stunden, einmal nutzbar):`, data.code, 'Nur mit dem Benutzernamen und dem Code kommt die Verbindung zustande.'));
+            form.remove();
+          } catch (err) {
+            say('error', err.status === 404 ? 'Diesen Benutzernamen gibt es nicht oder du bist kein Partner dieses Nutzers.' : `Nicht geklappt: ${err.message}`);
           }
-          card.append(button('Nutzer entfernen (nicht mehr Partner sein)', () => leave(entry.account_id), 'ghost'));
-          accountsEl.append(card);
-        }
-        if (list.length === 0) accountsEl.textContent = 'Noch keine Nutzer.';
+        }, '');
+        form.append(input, go);
+        card.append(form);
+        input.focus();
       }
 
-      render();
+      async function leave(accountId, name) {
+        if (!confirm(`Wirklich ${name} verlassen? Du verlierst dort den Zugriff.`)) return;
+        try {
+          await api(`/api/p/accounts/${accountId}/leave`, { method: 'POST' });
+          say('ok', 'Du bist nicht mehr Partner dieses Nutzers.');
+          await refreshAccounts();
+        } catch (err) {
+          say('error', `Nicht geklappt: ${err.message}`);
+        }
+      }
+
+      $('newOwner').onclick = async () => {
+        const label = $('newLabel').value.trim();
+        try {
+          const data = await api('/api/p/accounts', { method: 'POST', body: { label } });
+          $('newLabel').value = '';
+          say('ok', '', codeBox(`Nutzer angelegt. Er gibt im Add-on ein: Benutzername "${data.partner_username}" und den Code:`, data.code, `Gilt ${data.expires_in_hours} Stunden, einmal nutzbar.`));
+          await refreshAccounts();
+        } catch (err) {
+          say('error', `Nicht angelegt: ${err.message}`);
+        }
+      };
+
+      $('accept').onclick = async () => {
+        const code = $('acceptCode').value.trim();
+        if (!code) return;
+        try {
+          await api('/api/p/pairings/accept', { method: 'POST', body: { code } });
+          $('acceptCode').value = '';
+          say('ok', 'Verbunden. Du bist jetzt Partner dieses Nutzers.');
+          await refreshAccounts();
+        } catch (err) {
+          say('error', err.status === 400 ? 'Code falsch, abgelaufen oder schon benutzt.' : `Nicht geklappt: ${err.message}`);
+        }
+      };
+
+      $('logout').onclick = async () => {
+        try { await api('/api/p/logout', { method: 'POST' }); } catch {}
+        localStorage.removeItem(TOKEN);
+        clearSay();
+        showAuth();
+      };
+
+      $('tabLogin').onclick = () => setMode('login');
+      $('tabSignup').onclick = () => setMode('signup');
+      $('authGo').onclick = authenticate;
+      $('password').addEventListener('keydown', (e) => { if (e.key === 'Enter') authenticate(); });
+
+      setMode('login');
+      load();
+      setInterval(() => { if (token() && !$('app').classList.contains('hidden')) refreshAccounts().catch(() => {}); }, 20000);
     </script>
   </body>
 </html>

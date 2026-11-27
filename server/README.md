@@ -26,19 +26,23 @@ The schema is created on startup (`schema.sql`, idempotent).
 ## API (all JSON, bearer token where noted)
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
-| POST | `/api/partner-setup` | partner signature | a partner creates an account; the partner becomes its first partner |
+| POST | `/api/p/signup` | none | partner creates a login (username, password), returns session token |
+| POST | `/api/p/login` | none | partner login, returns session token (30 days) |
+| POST | `/api/p/logout` | session | end session |
+| GET | `/api/p/me` | session | username |
+| GET | `/api/p/accounts` | session | owners this partner is linked to: name, grant state, partners |
+| POST | `/api/p/accounts` | session | create owner; this partner is its first partner; returns code (24 h) and partner username |
+| POST | `/api/p/accounts/{id}/device-codes` | session | code (10 min) for one more device of the owner |
+| POST | `/api/p/accounts/{id}/pairings` | session | add another partner by username; returns code (24 h) for that partner |
+| POST | `/api/p/pairings/accept` | session | invited partner enters the code |
+| POST | `/api/p/accounts/{id}/grant` | session | grant: 30m, 1h, day, settings, end |
+| POST | `/api/p/accounts/{id}/leave` | session | partner leaves an owner |
+| POST | `/api/devices/claim` | partner username + code | owner's add-on connects; one use |
 | GET | `/api/state` | device token | settings, free windows, grant times, partner count |
-| PUT | `/api/settings` | token | Save button: whole draft at once; with a partner needs a time grant or a settings grant (used up by the save) |
-| POST | `/api/sites` | token | add a blocked site, always free |
-| POST | `/api/enabled` | token | turn block on (free, ends a running grant) or off (needs a running time grant with a partner) |
-| GET | `/api/partners` | token | partners with id, name, since |
-| POST | `/api/partners/remove` | token | owner removes a partner; needs a running time grant |
-| POST | `/api/partners/leave` | partner signature | partner ends its own role for the account (always free) |
-| POST | `/api/partner/device-codes` | partner signature | one-time device code (10 min) for the owner's add-on |
-| POST | `/api/devices/claim` | code | add-on exchanges a device code for a device token |
-| POST | `/api/partner/invites` | partner signature | one-time invite (24 h) for another partner |
-| POST | `/api/partners/register` | invite | register a partner public key |
-| POST | `/api/grant` | partner signature | apply a grant (tiers 30m, 1h, day, settings, end). Response has the new times for feedback |
-| GET | `/partner` | none | partner page |
+| PUT | `/api/settings` | device token | Save: with a partner needs a time grant or a settings grant (used up by the save) |
+| POST | `/api/sites` | device token | add a blocked site, always free |
+| POST | `/api/enabled` | device token | on (free, ends a grant) or off (needs a running time grant) |
+| GET | `/api/partners` | device token | partner usernames |
+| POST | `/api/partners/remove` | device token | owner removes a partner; needs a running time grant |
 
 Invites expire after 1 day and are single use. Grant rules: each grant is signed by a registered partner key over domain `gyst-grant-v2`, account id, tier and a unix stamp. Stamps must rise per account (single use) and be within 5 minutes of server time.

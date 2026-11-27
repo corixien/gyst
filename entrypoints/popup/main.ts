@@ -75,6 +75,7 @@ const showTokenButton = $<HTMLButtonElement>('showToken');
 const tokenBox = $<HTMLDivElement>('tokenBox');
 const tokenValue = $<HTMLElement>('tokenValue');
 const connectToken = $<HTMLInputElement>('connectToken');
+const connectPartner = $<HTMLInputElement>('connectPartner');
 
 const nowSeconds = () => Date.now() / 1000;
 const popupMessage = () => settings.popupMessage.trim() || defaultPopupMessage(locale);
@@ -475,11 +476,13 @@ showTokenButton.onclick = async () => {
 // Connects this device with a code the partner issued. The device token then replaces any local-only state.
 $<HTMLButtonElement>('connect').onclick = async () => {
   const code = connectToken.value.trim();
-  if (!code) return;
+  const partnerName = connectPartner.value.trim();
+  if (!code || !partnerName) return;
   try {
-    const claimed = await claimDevice(DEFAULT_SERVER, code);
+    const claimed = await claimDevice(DEFAULT_SERVER, partnerName, code);
     await accountItem.setValue({ server: DEFAULT_SERVER, token: claimed.token, accountId: claimed.account_id });
     connectToken.value = '';
+    connectPartner.value = '';
     await syncNow();
     await refreshAuthoritative();
   } catch (err) {

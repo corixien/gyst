@@ -36,8 +36,11 @@ export async function apiCall<T>(server: string, path: string, init: { method?: 
 }
 
 // Connects this device with the code a partner issued (10 minutes, one use).
-export const claimDevice = (server: string, code: string) =>
-  apiCall<{ account_id: string; token: string }>(server, '/api/devices/claim', { method: 'POST', body: { code } });
+export const claimDevice = (server: string, partnerUsername: string, code: string) =>
+  apiCall<{ account_id: string; token: string }>(server, '/api/devices/claim', {
+    method: 'POST',
+    body: { partner_username: partnerUsername, code },
+  });
 
 export const fetchState = (server: string, token: string) => apiCall<RemoteState>(server, '/api/state', { token });
 

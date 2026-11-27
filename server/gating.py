@@ -1,48 +1,37 @@
-"""Pure rules: what a partner-signed request means. Every owner-side credential is derived from a partner key."""
-import base64
-import struct
+"""Pure rules: what a partner grant does to an owner's free time, and what a partner login may contain."""
+import hashlib
+import hmac
+import os
+import re
 
-from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-
-GRANT_DOMAIN = b'gyst-grant-v2'
-LEAVE_DOMAIN = b'gyst-leave-v1'
-DEVICE_DOMAIN = b'gyst-device-v1'  # partner issues a device code for an account
-INVITE_DOMAIN = b'gyst-invite-v1'  # partner issues an invite for another partner
-SETUP_DOMAIN = b'gyst-setup-v1'  # partner creates a new account (becomes its first partner)
-# Tier ids are part of the signed message. 'end' stops a running grant and the settings grant.
-TIERS = [('30m', 30 * 60), ('1h', 60 * 60), ('day', 24 * 60 * 60), ('settings', 15 * 60), ('end', 0)]
-MAX_STAMP_AGE = 300  # seconds a signed request may be old when it arrives
+# Grant tiers: 30 min, 1 h, a whole day (extend the time grant), settings (15 min, one save), end (stop everything).
+TIERS = {'30m': 30 * 60, '1h': 60 * 60, 'day': 24 * 60 * 60, 'settings': 15 * 60, 'end': 0}
+USERNAME = re.compile(r'^[a-z0-9_.-]{3,20}$')
 
 
-def _uuid_bytes(account_id: str) -> bytes:
-    return base64.b16decode(account_id.replace('-', '').upper())
+def apply_grant(tier: str, now: int, grant_until: int, settings_until: int) -> tuple[int, int]:
+    """Returns the new (grant_until, settings_until) after a partner grant."""
+    if tier == 'end':
+        return 0, 0
+    if tier == 'settings':
+        return grant_until, now + TIERS['settings']
+    return max(grant_until, now) + TIERS[tier], settings_until
 
 
-def grant_message(account_id: str, tier_id: int, stamp: int) -> bytes:
-    return GRANT_DOMAIN + _uuid_bytes(account_id) + struct.pack('>BI', tier_id, stamp)
+def valid_username(name: str) -> bool:
+    return USERNAME.fullmatch(name) is not None
 
 
-def account_message(domain: bytes, account_id: str, stamp: int) -> bytes:
-    return domain + _uuid_bytes(account_id) + struct.pack('>I', stamp)
+def hash_password(password: str) -> str:
+    salt = os.urandom(16)
+    digest = hashlib.scrypt(password.encode(), salt=salt, n=2 ** 14, r=8, p=1, dklen=32)
+    return f'scrypt${salt.hex()}${digest.hex()}'
 
 
-def setup_message(pubkey_hex: str, stamp: int) -> bytes:
-    return SETUP_DOMAIN + bytes.fromhex(pubkey_hex) + struct.pack('>I', stamp)
-
-
-def verify_signed(pubkey_hex: str, message: bytes, signature_b64: str, stamp: int, now: int) -> bool:
-    if abs(now - stamp) > MAX_STAMP_AGE:
-        return False
+def verify_password(password: str, stored: str) -> bool:
     try:
-        key = Ed25519PublicKey.from_public_bytes(bytes.fromhex(pubkey_hex))
-        key.verify(base64.b64decode(signature_b64), message)
-    except (ValueError, InvalidSignature, TypeError):
+        _, salt_hex, digest_hex = stored.split('$')
+    except ValueError:
         return False
-    return True
-
-
-def verify_grant(pubkey_hex: str, account_id: str, tier_id: int, stamp: int, signature_b64: str, now: int) -> bool:
-    if not 0 <= tier_id < len(TIERS):
-        return False
-    return verify_signed(pubkey_hex, grant_message(account_id, tier_id, stamp), signature_b64, stamp, now)
+    digest = hashlib.scrypt(password.encode(), salt=bytes.fromhex(salt_hex), n=2 ** 14, r=8, p=1, dklen=32)
+    return hmac.compare_digest(digest.hex(), digest_hex)
