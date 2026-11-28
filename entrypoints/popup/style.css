@@ -10,6 +10,8 @@
   --danger: #ff4d6d;
   --track: #262c3a;
   --radius: 14px;
+  --pending: #f5c542;
+  --pending-bg: rgba(245, 197, 66, 0.12);
 }
 
 @media (prefers-color-scheme: light) {
@@ -350,4 +352,30 @@ details.device[open] > summary {
 
 details.device > *:not(summary) {
   margin-top: 10px;
+}
+
+.input-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.input-row > input,
+.input-row > select {
+  flex: 1;
+}
+
+input.changed,
+select.changed {
+  border-color: var(--pending);
+  box-shadow: 0 0 0 1px var(--pending);
+}
+
+.sites li.pending {
+  background: var(--pending-bg);
+  box-shadow: inset 3px 0 0 var(--pending);
+}
+
+.sites li.pending span {
+  color: var(--pending);
 }

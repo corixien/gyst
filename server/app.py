@@ -213,12 +213,12 @@ def put_settings(body: SettingsIn, account_id: str = Depends(device_account), co
     switching_off = not first_save and (row['settings'] or {}).get('enabled') and not body.enabled
     if has_partner and switching_off and not time_grant:
         raise HTTPException(403, {'error': 'grant_required'})
-    # Loosening (removing a blocked site, adding a free window) also needs a time grant.
+    # Loosening (removing a blocked site, adding a free window) needs a grant too; the one-time save is enough.
     old_sites = set((row['settings'] or {}).get('sites', []))
     removes_site = bool(old_sites - set(body.sites))
     old_windows = {json.dumps(w, sort_keys=True) for w in row['free_windows'] or []}
     adds_window = any(json.dumps(w, sort_keys=True) not in old_windows for w in body.free_windows)
-    if has_partner and not first_save and (removes_site or adds_window) and not time_grant:
+    if has_partner and not first_save and (removes_site or adds_window) and not (time_grant or settings_grant):
         raise HTTPException(403, {'error': 'grant_required'})
     settings_until = row['settings_until'] if (time_grant or first_save or not has_partner) else 0
     settings = body.model_dump(exclude={'free_windows'})

@@ -93,22 +93,31 @@
       <section class="group">
         <h2 data-i18n="settingsTitle"></h2>
         <p id="ruleHint" class="hint"></p>
-        <label id="popupField" class="field">
+        <div id="popupField" class="field">
           <span data-i18n="popupMessageLabel"></span>
-          <input id="popupMessage" type="text" data-i18n-placeholder="defaultPopupMessage" />
-        </label>
-        <label class="field">
+          <div class="input-row">
+            <input id="popupMessage" type="text" data-i18n-placeholder="defaultPopupMessage" />
+            <button type="button" class="btn ghost small reset-one" data-reset="popupMessage" hidden data-i18n="resetOne"></button>
+          </div>
+        </div>
+        <div class="field">
           <span data-i18n="blockMessageLabel"></span>
-          <input id="blockMessage" type="text" data-i18n-placeholder="defaultBlockMessage" />
-        </label>
-        <label class="field">
+          <div class="input-row">
+            <input id="blockMessage" type="text" data-i18n-placeholder="defaultBlockMessage" />
+            <button type="button" class="btn ghost small reset-one" data-reset="blockMessage" hidden data-i18n="resetOne"></button>
+          </div>
+        </div>
+        <div class="field">
           <span data-i18n="language"></span>
-          <select id="language">
-            <option value="auto" data-i18n="languageAuto"></option>
-            <option value="de">Deutsch</option>
-            <option value="en">English</option>
-          </select>
-        </label>
+          <div class="input-row">
+            <select id="language">
+              <option value="auto" data-i18n="languageAuto"></option>
+              <option value="de">Deutsch</option>
+              <option value="en">English</option>
+            </select>
+            <button type="button" class="btn ghost small reset-one" data-reset="language" hidden data-i18n="resetOne"></button>
+          </div>
+        </div>
         <div class="row-form">
           <button id="save" type="button" class="btn" data-i18n="save"></button>
           <small id="saveHint" class="hint" hidden></small>

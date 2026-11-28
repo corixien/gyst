@@ -156,87 +156,114 @@ function renderRules() {
   popupField.hidden = withPartner;
 }
 
+const pendingSites = () => settings.sites.filter((site) => !draft.sites.includes(site));
+const addedWindows = () => draft.free.filter((w) => !freeWindows.some((f) => sameWindow(f, w)));
+const removedWindows = () => freeWindows.filter((f) => !draft.free.some((d) => sameWindow(d, f)));
+
+type TextKey = 'popupMessage' | 'blockMessage' | 'language';
+const fieldInputs: Record<TextKey, HTMLInputElement | HTMLSelectElement> = {
+  popupMessage: popupMessageInput,
+  blockMessage: blockMessageInput,
+  language: languageSelect,
+};
+
+// Every edit stays visible: changed fields and list rows are yellow, and each has a button back to the saved value.
 function renderDraft() {
   popupMessageInput.value = draft.popupMessage;
   blockMessageInput.value = draft.blockMessage;
   languageSelect.value = draft.language;
-  sitesList.replaceChildren(
-    ...draft.sites.map((site) => {
-      const item = document.createElement('li');
-      const name = document.createElement('span');
-      name.textContent = site;
-      const remove = document.createElement('button');
-      remove.type = 'button';
-      remove.className = 'btn ghost small';
-      remove.textContent = t('remove', locale);
-      remove.onclick = () => {
-        draft = { ...draft, sites: draft.sites.filter((s) => s !== site) };
-        renderDraft();
-      };
-      item.append(name, remove);
-      return item;
-    }),
-  );
-  if (draft.sites.length === 0) {
-    const empty = document.createElement('li');
-    empty.className = 'empty';
-    empty.textContent = t('noSites', locale);
-    sitesList.append(empty);
+  for (const key of Object.keys(fieldInputs) as TextKey[]) {
+    const changed = draft[key] !== settings[key];
+    fieldInputs[key].classList.toggle('changed', changed);
+    document.querySelector<HTMLButtonElement>(`[data-reset="${key}"]`)!.hidden = !changed;
   }
-  const sorted = draft.free
-    .map((window, index) => ({ window, index }))
-    .sort((a, b) => a.window.day - b.window.day || a.window.from.localeCompare(b.window.from));
-  freeList.replaceChildren(
-    ...sorted.map(({ window, index }) => {
-      const item = document.createElement('li');
-      const range = document.createElement('span');
-      range.textContent = `${weekdayName(window.day)} ${window.from} – ${window.to}`;
-      const remove = document.createElement('button');
-      remove.type = 'button';
-      remove.className = 'btn ghost small';
-      remove.textContent = t('remove', locale);
-      remove.onclick = () => {
-        draft = { ...draft, free: draft.free.filter((_, i) => i !== index) };
-        renderDraft();
-      };
-      item.append(range, remove);
-      return item;
-    }),
-  );
-  if (draft.free.length === 0) {
-    const empty = document.createElement('li');
-    empty.className = 'empty';
-    empty.textContent = t('freeEmpty', locale);
-    freeList.append(empty);
-  }
+  renderSites();
+  renderFree();
   renderNotes();
   void draftItem.setValue(dirty() ? draft : null);
 }
 
-const sameWindow = (a: FreeWindow, b: FreeWindow) => a.day === b.day && a.from === b.from && a.to === b.to;
+function row(text: string, pending: boolean, button: string, onClick: () => void): HTMLLIElement {
+  const item = document.createElement('li');
+  if (pending) item.classList.add('pending');
+  const label = document.createElement('span');
+  label.textContent = text;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn ghost small';
+  btn.textContent = button;
+  btn.onclick = onClick;
+  item.append(label, btn);
+  return item;
+}
 
-// With partners, removing a site, adding a free window or changing messages needs a grant. Until then these
-// stay as unsaved edits, marked here, and the reset button brings back the saved state.
+function emptyRow(text: string): HTMLLIElement {
+  const item = document.createElement('li');
+  item.className = 'empty';
+  item.textContent = text;
+  return item;
+}
+
+function renderSites() {
+  const items = [
+    ...draft.sites.map((site) => row(site, !settings.sites.includes(site), t('remove', locale), () => {
+      draft = { ...draft, sites: draft.sites.filter((s) => s !== site) };
+      renderDraft();
+    })),
+    ...pendingSites().map((site) => row(site, true, t('undo', locale), () => {
+      draft = { ...draft, sites: [...draft.sites, site] };
+      renderDraft();
+    })),
+  ];
+  sitesList.replaceChildren(...(items.length ? items : [emptyRow(t('noSites', locale))]));
+}
+
+const weekdayOrder = (a: FreeWindow, b: FreeWindow) => a.day - b.day || a.from.localeCompare(b.from);
+
+function renderFree() {
+  const window = (w: FreeWindow) => `${weekdayName(w.day)} ${w.from} – ${w.to}`;
+  const items = [
+    ...[...draft.free].sort(weekdayOrder).map((w) => {
+      const pending = !freeWindows.some((f) => sameWindow(f, w));
+      return row(window(w), pending, t('remove', locale), () => {
+        draft = { ...draft, free: draft.free.filter((x) => !sameWindow(x, w)) };
+        renderDraft();
+      });
+    }),
+    ...removedWindows().sort(weekdayOrder).map((w) => row(window(w), true, t('undo', locale), () => {
+      draft = { ...draft, free: [...draft.free, w] };
+      renderDraft();
+    })),
+  ];
+  freeList.replaceChildren(...(items.length ? items : [emptyRow(t('freeEmpty', locale))]));
+}
+
+// With partners, Save needs a grant (time or one-time settings grant). Until then the edits stay as drafts.
 function renderNotes() {
-  const locked = partners > 0 && !grantActive();
-  const removedSites = settings.sites.some((site) => !draft.sites.includes(site));
-  const addedWindows = draft.free.some((w) => !freeWindows.some((f) => sameWindow(f, w)));
-  const changedMessages =
-    draft.popupMessage !== settings.popupMessage || draft.blockMessage !== settings.blockMessage || draft.language !== settings.language;
-  sitesNote.hidden = !(locked && removedSites);
+  const locked = partners > 0 && !grantActive() && !settingsOpen();
+  const dirtyNow = dirty();
+  sitesNote.hidden = !(locked && pendingSites().length > 0);
   sitesNote.textContent = t('needsGrantNote', locale);
-  freeNote.hidden = !(locked && addedWindows);
+  freeNote.hidden = !(locked && addedWindows().length > 0);
   freeNote.textContent = t('needsGrantNote', locale);
-  const needsGrant = (locked && (removedSites || addedWindows)) || (locked && !settingsOpen() && changedMessages);
-  saveHint.hidden = !dirty();
-  saveHint.textContent = needsGrant ? t('draftNeedsGrant', locale) : t('unsaved', locale);
-  resetDraftButton.hidden = !dirty();
+  saveHint.hidden = !dirtyNow;
+  saveHint.textContent = locked ? t('draftNeedsGrant', locale) : t('unsaved', locale);
+  resetDraftButton.hidden = !dirtyNow;
 }
 
 resetDraftButton.onclick = () => {
   draft = fromSettings();
   renderDraft();
 };
+
+for (const key of Object.keys(fieldInputs) as TextKey[]) {
+  document.querySelector<HTMLButtonElement>(`[data-reset="${key}"]`)!.onclick = () => {
+    draft = { ...draft, [key]: settings[key] };
+    renderDraft();
+  };
+}
+
+const sameWindow = (a: FreeWindow, b: FreeWindow) => a.day === b.day && a.from === b.from && a.to === b.to;
 
 // Day 0 is Monday. 5 Jan 2026 was a Monday, so the names follow the UI language.
 const weekdayName = (day: number, style: 'long' | 'short' = 'long') =>

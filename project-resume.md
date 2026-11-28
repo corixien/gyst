@@ -33,7 +33,9 @@ WXT 0.21 + TypeScript + Vitest, MV3. Vanilla TS + CSS. `storage.local`, DNR dyna
 - Popup drafts persist (local:draft). Unsaved loosening (removed site, added free window, changed messages) stays marked with a reset button until a grant allows Save.
 - Content script (entrypoints/content.ts) on blocked domains: checks every 1 s, blocks the open tab when grant/free window ends (gyst-block message), stores the video second (session:resume) and seeks to it after release (gyst-resume).
 - Owner name: own endpoint `PUT /api/owner/name`, no grant, shown to all partners. Partner labels removed.
-- Loosening (remove site, add free window) needs time grant on Save; tightening with settings grant.
+- Loosening (remove site, add free window) needs a grant on Save: time grant or one-time settings grant. Switching off needs a time grant.
+- Partner dashboard asks "Bitte frag erst den Nutzer..." before every grant except end.
+- Popup: edits stay yellow with per-item undo; text fields have an undo button.
 - Device form ("Gerät verbinden") only shown while no partner is connected.
 - Server: 30 API tests against local Postgres (podman container, port 55432, test only).
 - NOT done: dashboard not clicked through in a browser; Render deploy and Neon migration (old `partners`/`invites`/`grant_log` tables are unused, `accounts.token_hash` dropped).

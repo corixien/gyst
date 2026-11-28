@@ -37,6 +37,11 @@
       .tabs button { flex: 1; }
       .tabs button.ghost { background: var(--card); border: 1px solid var(--line); }
       .hidden { display: none !important; }
+      dialog { background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 14px; max-width: 480px; width: calc(100% - 32px); padding: 22px; }
+      dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
+      dialog h2 { font-size: 18px; color: var(--text); text-transform: none; letter-spacing: 0; margin: 0 0 12px; }
+      dialog p { line-height: 1.45; margin: 8px 0; }
+      .actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; margin-top: 18px; }
     </style>
   </head>
   <body>
@@ -86,6 +91,20 @@
 
       <p id="info" class="status hidden" role="status"></p>
     </main>
+
+    <dialog id="justify">
+      <form method="dialog">
+        <h2>Freigabe prüfen</h2>
+        <p id="justifyTier"></p>
+        <p>Bitte frag erst den Nutzer, warum er das braucht, und ob er in seiner To-Do-Liste nicht etwas anderes hätte.</p>
+        <p id="justifySettings" class="muted"></p>
+        <div class="actions">
+          <button value="cancel" class="ghost">Abbrechen</button>
+          <button value="cancel" class="ghost">Nein, doch nicht</button>
+          <button value="ok">Rechtfertigt</button>
+        </div>
+      </form>
+    </dialog>
 
     <script>
       const API = location.origin;
@@ -282,7 +301,22 @@
         return btn;
       }
 
+      // Asks the partner to check the reason before any grant goes out. Ending a grant needs no check.
+      function justify(tier) {
+        return new Promise((resolve) => {
+          const dialog = document.getElementById('justify');
+          document.getElementById('justifyTier').textContent = `Du gibst: ${tier.label}.`;
+          document.getElementById('justifySettings').textContent = tier.id === 'settings'
+            ? 'Einmal speichern: Der Nutzer darf seine Einstellungen genau einmal speichern, 15 Minuten lang. Vorher klären, welche Einstellungen er ändern will. Seiten entfernen oder Freizeit eintragen macht die Sperre weicher. Die Blockade ausschalten geht damit nicht, das braucht eine Zeit-Freigabe. Die Freigabe gilt nur für diese eine Speicherung.'
+            : '';
+          dialog.returnValue = '';
+          dialog.onclose = () => resolve(dialog.returnValue === 'ok');
+          dialog.showModal();
+        });
+      }
+
       async function grant(accountId, tier) {
+        if (tier.id !== 'end' && !(await justify(tier))) return;
         try {
           await api(`/api/p/accounts/${accountId}/grant`, { method: 'POST', body: { tier: tier.id } });
           say('ok', tier.id === 'end' ? 'Freigabe beendet. Der Nutzer ist wieder gesperrt.' : `Freigabe gesetzt: ${tier.label}.`);

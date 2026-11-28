@@ -161,25 +161,21 @@ class ApiTest(unittest.TestCase):
     def test_owner_name_needs_no_grant_and_no_save(self):
         self.assertEqual(self.client.put('/api/owner/name', json={'name': 'Neu'}, headers=self.owner).status_code, 200)
 
-    def test_removing_site_needs_time_grant(self):
-        r = self.client.put('/api/settings', headers=self.owner, json={**BASE_SETTINGS, 'sites': []})
-        self.assertEqual(r.status_code, 403)
-        self.grant(self.p1, 'settings')
+    def test_removing_site_needs_grant(self):
         self.assertEqual(self.client.put('/api/settings', headers=self.owner, json={**BASE_SETTINGS, 'sites': []}).status_code, 403)
-        self.grant(self.p1, '30m')
+        self.grant(self.p1, 'settings')
         self.assertEqual(self.client.put('/api/settings', headers=self.owner, json={**BASE_SETTINGS, 'sites': []}).status_code, 200)
 
-    def test_adding_free_window_needs_time_grant_removing_does_not(self):
+    def test_adding_free_window_needs_grant_removing_does_not(self):
         window = {'day': 0, 'from': '00:01', 'to': '23:59'}
         self.assertEqual(self.client.put('/api/settings', headers=self.owner,
                                          json={**BASE_SETTINGS, 'free_windows': [window]}).status_code, 403)
         self.grant(self.p1, 'settings')
         self.assertEqual(self.client.put('/api/settings', headers=self.owner,
-                                         json={**BASE_SETTINGS, 'free_windows': [window]}).status_code, 403)
-        self.grant(self.p1, '30m')
-        self.assertEqual(self.client.put('/api/settings', headers=self.owner,
                                          json={**BASE_SETTINGS, 'free_windows': [window]}).status_code, 200)
-        self.grant(self.p1, 'settings')
+        self.assertEqual(self.client.put('/api/settings', headers=self.owner,
+                                         json={**BASE_SETTINGS, 'free_windows': []}).status_code, 403)  # used up
+        self.grant(self.p1, '30m')
         self.assertEqual(self.client.put('/api/settings', headers=self.owner,
                                          json={**BASE_SETTINGS, 'free_windows': []}).status_code, 200)
 
